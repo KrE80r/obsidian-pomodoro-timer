@@ -7,75 +7,6 @@ import type { TaskFormat } from 'Settings'
 import type { Unsubscriber } from 'svelte/motion'
 import { DESERIALIZERS } from 'serializer'
 
-interface TasksPluginTask {
-    text: string;
-    path: string;
-    description: string;
-    status: string;
-    checked: boolean;
-    line: number;
-}
-
-interface InternalApi {
-    getInternalApi: () => {
-        search: (query: string) => Promise<TasksPluginTask[]>;
-    };
-}
-
-interface TasksPlugin {
-    InternalApi: InternalApi;
-}
-
-function isTasksPlugin(plugin: unknown): plugin is TasksPlugin {
-    const p = plugin as any;
-    return Boolean(
-        p &&
-        typeof p === 'object' &&
-        p.InternalApi?.getInternalApi &&
-        typeof p.InternalApi.getInternalApi().search === 'function'
-    );
-}
-
-interface DataviewTask {
-    text: string;
-    path: string;
-    status: string;
-    completed: boolean;
-    completion: Date;
-    due?: Date;
-    created?: Date;
-    scheduled?: Date;
-    priority?: string;
-    tags: string[];
-    line: number;
-    link: { path: string };
-    header?: { subpath: string };
-    position: { start: { line: number; col: number; offset: number } };
-}
-
-interface DataviewPage {
-    file: {
-        path: string;
-        tasks: DataviewTask[];
-    };
-}
-
-interface DataviewAPI {
-    query: (source: string) => Promise<any>;
-}
-
-interface DataviewPlugin {
-    api: DataviewAPI;
-}
-
-function isDataviewPlugin(plugin: unknown): plugin is DataviewPlugin {
-    const p = plugin as any;
-    return Boolean(
-        p?.api?.query &&
-        typeof p.api.query === 'function'
-    );
-}
-
 export type TaskItem = {
     path: string
     text: string
@@ -123,65 +54,58 @@ export default class Tasks implements Readable<TaskStore> {
 
     constructor(plugin: PomodoroTimerPlugin) {
         this.plugin = plugin
-
         this._store = writable(this.state)
+        
+        this.setupSubscriptions();
+        this.setupFileChangeHandler();
+        
+        this.subscribe = this._store.subscribe
+    }
 
+    private setupSubscriptions() {
         this.unsubscribers.push(
             this._store.subscribe((state) => {
                 this.state = state
             }),
-        )
+            derived(this.plugin.tracker!, ($tracker) => $tracker.file?.path)
+                .subscribe(() => {
+                    const file = this.plugin.tracker?.file
+                    file ? this.loadFileTasks(file) : this.clearTasks()
+                })
+        );
+    }
 
-        this.unsubscribers.push(
-            derived(this.plugin.tracker!, ($tracker) => {
-                return $tracker.file?.path
-            }).subscribe(() => {
-                let file = this.plugin.tracker?.file
-                if (file) {
-                    this.loadFileTasks(file)
-                } else {
-                    this.clearTasks()
-                }
-            }),
-        )
-
-        this.subscribe = this._store.subscribe
-
+    private setupFileChangeHandler() {
         this.plugin.registerEvent(
-            plugin.app.metadataCache.on(
+            this.plugin.app.metadataCache.on(
                 'changed',
                 (file: TFile, content: string, cache: CachedMetadata) => {
-                    if (
-                        file.extension === 'md' &&
-                        file == this.plugin.tracker!.file
-                    ) {
-                        let tasks = resolveTasks(
-                            this.plugin.getSettings().taskFormat,
-                            file,
-                            content,
-                            cache,
-                        )
-                        this._store.update((state) => {
-                            state.list = tasks
-                            return state
-                        })
+                    if (file.extension !== 'md' || file !== this.plugin.tracker?.file) return;
+                    
+                    const tasks = resolveTasks(
+                        this.plugin.getSettings().taskFormat,
+                        file,
+                        content,
+                        cache,
+                    );
+                    
+                    this._store.update(state => ({ ...state, list: tasks }));
+                    this.syncActiveTask(tasks);
+                }
+            )
+        );
+    }
 
-                        // sync active task
-                        if (this.plugin.tracker?.task?.blockLink) {
-                            let task = tasks.find(
-                                (item) =>
-                                    item.blockLink &&
-                                    item.blockLink ===
-                                        this.plugin.tracker?.task?.blockLink,
-                            )
-                            if (task) {
-                                this.plugin.tracker.sync(task)
-                            }
-                        }
-                    }
-                },
-            ),
-        )
+    private syncActiveTask(tasks: TaskItem[]) {
+        if (!this.plugin.tracker?.task?.blockLink) return;
+        
+        const task = tasks.find(item => 
+            item.blockLink && item.blockLink === this.plugin.tracker?.task?.blockLink
+        );
+        
+        if (task) {
+            this.plugin.tracker.sync(task);
+        }
     }
 
     public loadFileTasks(file: TFile) {
@@ -248,11 +172,15 @@ export default class Tasks implements Readable<TaskStore> {
         );
     }
 
-    private convertToTaskItem(task: any, file: TFile): TaskItem {
+    private convertToTaskItem(task: DataviewTask, file: TFile): TaskItem {
+        const fileName = task.link?.path ? 
+            task.link.path.split('/').pop() || '' : 
+            file.name;
+            
         return {
             text: task.text || '',
             path: task.link?.path || file.path,
-            fileName: task.link?.path ? task.link.path.split('/').pop() || '' : file.name,
+            fileName,
             name: task.text || '',
             status: task.status || '',
             blockLink: task.link?.path || '',
@@ -270,62 +198,6 @@ export default class Tasks implements Readable<TaskStore> {
             actual: 0,
             tags: task.tags || [],
             line: task.line || 0,
-            heading: task.header || '',
-        };
-    }
-
-    private convertToDataviewQuery(tasksQuery: string): string {
-        const lines = tasksQuery.split('\n').filter(l => l.trim());
-        const conditions: string[] = [];
-
-        for (const line of lines) {
-            const trimmed = line.trim().toLowerCase();
-            
-            if (trimmed.includes('path includes')) {
-                const path = trimmed.match(/path includes (.+)/i)?.[1];
-                if (path) {
-                    conditions.push(`contains(file.path, "${path}")`);
-                }
-            }
-            
-            if (trimmed.includes('status.name includes')) {
-                const status = trimmed.match(/status\.name includes (.+)/i)?.[1];
-                if (status) {
-                    conditions.push(`contains(task.status, "${status}")`);
-                }
-            }
-
-            if (trimmed === 'not done') {
-                conditions.push('!task.completed');
-            }
-        }
-
-        // Return a DQL query
-        return conditions.length > 0 ? conditions.join(' and ') : 'true';
-    }
-
-    private convertDataviewToTaskItem(task: DataviewTask, file: TFile): TaskItem {
-        return {
-            text: task.text || '',
-            path: task.path || file.path,
-            fileName: task.path ? task.path.split('/').pop() || '' : file.name,
-            name: task.text || '',
-            status: task.status || '',
-            blockLink: task.link?.path || '',
-            checked: task.completed || false,
-            description: task.text || '',
-            done: task.completion?.toISOString().split('T')[0] || '',
-            due: task.due?.toISOString().split('T')[0] || '',
-            created: task.created?.toISOString().split('T')[0] || '',
-            cancelled: '',
-            scheduled: task.scheduled?.toISOString().split('T')[0] || '',
-            start: '',
-            priority: task.priority || '',
-            recurrence: '',
-            expected: 0,
-            actual: 0,
-            tags: task.tags || [],
-            line: task.line || task.position?.start?.line || 0,
             heading: task.header?.subpath || '',
         };
     }
@@ -413,4 +285,18 @@ export function resolveTasks(
     }
 
     return Object.values(cache)
+}
+
+interface DataviewTask {
+    text: string;
+    status: string;
+    completed: boolean;
+    due?: Date;
+    created?: Date;
+    scheduled?: Date;
+    priority?: string;
+    tags: string[];
+    line: number;
+    link: { path: string };
+    header?: { subpath: string };
 }
