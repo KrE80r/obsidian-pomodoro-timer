@@ -1,6 +1,6 @@
 import { type TaskItem } from 'Tasks'
 import type PomodoroTimerPlugin from 'main'
-import type { TFile } from 'obsidian'
+import { TFile } from 'obsidian'
 import { Keymap, MarkdownView } from 'obsidian'
 import { DESERIALIZERS, POMODORO_REGEX } from 'serializer'
 import {

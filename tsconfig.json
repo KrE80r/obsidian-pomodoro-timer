@@ -4,6 +4,7 @@
         "types": ["svelte", "node"],
         "baseUrl": "./src",
         "inlineSources": true,
+        "sourceMap": true,
         "module": "ESNext",
         "target": "ES6",
         "esModuleInterop": false,
