@@ -1,5 +1,5 @@
 import PomodoroTimerPlugin from 'main'
-import { type CachedMetadata, type TFile, type App } from 'obsidian'
+import { CachedMetadata, TFile, App } from 'obsidian'
 import { extractTaskComponents } from 'utils'
 import { writable, derived, type Readable, type Writable } from 'svelte/store'
 
@@ -194,7 +194,12 @@ export default class Tasks implements Readable<TaskStore> {
             // For each query block, try to get tasks from the Tasks plugin
             for (const queryBlock of queryBlocks) {
                 // Get tasks from the Tasks plugin's cache if possible
-                if (tasksPlugin.cache && typeof tasksPlugin.cache.getTasks === 'function') {
+                // Using a more defensive approach to access potentially undefined properties
+                if (tasksPlugin.cache && 
+                    typeof tasksPlugin.cache === 'object' && 
+                    'getTasks' in tasksPlugin.cache && 
+                    typeof tasksPlugin.cache.getTasks === 'function') {
+                    
                     const tasks = tasksPlugin.cache.getTasks();
                     
                     // Apply query filters (simplified version - in a real implementation 

@@ -36,7 +36,8 @@ const DEFAULT_TASK: TaskItem = {
     priority: '',
     recurrence: '',
     tags: [],
-    line: -1,
+    line: 0,
+    source: 'direct'
 }
 
 export type TimerState = {
