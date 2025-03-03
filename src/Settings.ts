@@ -32,6 +32,7 @@ export interface Settings {
     useSystemNotification: boolean
     taskFormat: TaskFormat
     lowFps: boolean
+    includeQueriedTasks: boolean
 }
 
 export default class PomodoroSettings extends PluginSettingTab {
@@ -53,6 +54,7 @@ export default class PomodoroSettings extends PluginSettingTab {
         useSystemNotification: false,
         taskFormat: 'TASKS',
         lowFps: false,
+        includeQueriedTasks: false
     }
 
     static settings: Writable<Settings> = writable(
@@ -101,6 +103,21 @@ export default class PomodoroSettings extends PluginSettingTab {
     public display() {
         const { containerEl } = this
         containerEl.empty()
+
+        containerEl.createEl('h2', { text: 'Pomodoro Timer Settings' })
+
+        new Setting(containerEl)
+            .setName('Work session length')
+            .setDesc('Length of a work session in minutes')
+            .addSlider((s) =>
+                s
+                    .setLimits(1, 60, 1)
+                    .setValue(this._settings.workLen)
+                    .setDynamicTooltip()
+                    .onChange((v) => {
+                        this.updateSettings({ workLen: v })
+                    }),
+            )
 
         new Setting(containerEl)
             .setName('Enable Status Bar Timer')
@@ -328,5 +345,33 @@ export default class PomodoroSettings extends PluginSettingTab {
                 this.updateSettings(PomodoroSettings.DEFAULT_SETTINGS, true)
             })
         })
+
+        containerEl.createEl('h2', { text: 'Task Settings' })
+
+        const hasObsidianTasksPlugin = this.plugin.app.plugins.plugins['obsidian-tasks-plugin'] !== undefined;
+
+        new Setting(containerEl)
+            .setName('Include queried tasks')
+            .setDesc('Include tasks embedded via queries from other notes')
+            .setDisabled(!hasObsidianTasksPlugin)
+            .addToggle((t) => {
+                t.setValue(this._settings.includeQueriedTasks).onChange((v) => {
+                    this.updateSettings({ includeQueriedTasks: v })
+                })
+                if (!hasObsidianTasksPlugin) {
+                    t.setTooltip('Requires Obsidian Tasks plugin to be installed')
+                }
+            })
+
+        new Setting(containerEl)
+            .setName('Enable task tracking')
+            .setDesc(
+                'When enabled, if a task is active, its pomodoro count will be incremented',
+            )
+            .addToggle((t) => {
+                t.setValue(this._settings.enableTaskTracking).onChange((v) => {
+                    this.updateSettings({ enableTaskTracking: v })
+                })
+            })
     }
 }

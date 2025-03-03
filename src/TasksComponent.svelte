@@ -222,58 +222,25 @@ const showTaskMenu = (task: TaskItem) => (e: MouseEvent) => {
             {/if}
         </div>
         {#if filtered.length > 0}
-            <div class="pomodoro-tasks-list">
+            <div class="task-list">
                 {#each filtered as item}
                     <div
-                        on:click={() => {
-                            activeTask(item)
-                        }}
+                        class="task-item"
+                        class:active={$tracker.task?.blockLink == item.blockLink}
+                        on:click={() => activeTask(item)}
                         on:contextmenu={showTaskMenu(item)}
-                        style="background: linear-gradient(to right, rgba(var(--color-green-rgb),0.25) {progress(
-                            item,
-                        )}%, transparent 0%)"
-                        class="pomodoro-tasks-item {item.checked
-                            ? 'pomodoro-tasks-checked'
-                            : ''}"
                     >
-                        <div class="pomodoro-tasks-name">
-                            {#if item.checked}
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    width="12"
-                                    height="12"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    class="lucide lucide-check"
-                                    ><path d="M20 6 9 17l-5-5" /></svg
-                                >
-                            {:else}
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    width="12"
-                                    height="12"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    class="lucide lucide-circle"
-                                    ><circle cx="12" cy="12" r="10" /></svg
-                                >
-                            {/if}
-                            <TaskItemComponent
-                                render={r}
-                                content={item.description}
-                            />
-                        </div>
-                        <div class="pomodoro-tasks-progress">
-                            {progressText(item)}
-                        </div>
+                        <TaskItemComponent
+                            checked={item.checked}
+                            {render}
+                            text={item.name}
+                        />
+                        {#if item.source === 'query'}
+                            <span class="task-source task-source-query">from query</span>
+                        {/if}
+                        {#if item.expected > 0 || item.actual > 0}
+                            <span class="task-progress">{progressText(item)}</span>
+                        {/if}
                     </div>
                 {/each}
             </div>
@@ -427,5 +394,39 @@ const showTaskMenu = (task: TaskItem) => (e: MouseEvent) => {
     text-align: end;
     text-wrap: nowrap;
     overflow: hidden;
+}
+
+.task-list {
+    margin-top: 8px;
+    margin-bottom: 8px;
+}
+
+.task-item {
+    display: flex;
+    flex-direction: row;
+    padding: 2px;
+    margin-bottom: 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    align-items: center;
+}
+
+.task-source {
+    font-size: 0.8em;
+    opacity: 0.6;
+    margin-left: 4px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    background-color: var(--background-secondary);
+}
+
+.task-source-query {
+    background-color: var(--color-accent);
+    color: var(--text-on-accent);
+    opacity: 0.8;
+}
+
+.task-item:hover {
+    background-color: var(--background-secondary);
 }
 </style>
