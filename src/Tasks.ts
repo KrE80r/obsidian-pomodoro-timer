@@ -1,5 +1,5 @@
 import PomodoroTimerPlugin from 'main'
-import { CachedMetadata, TFile, App } from 'obsidian'
+import type { CachedMetadata, TFile, App } from 'obsidian'
 import { extractTaskComponents } from 'utils'
 import { writable, derived, type Readable, type Writable } from 'svelte/store'
 
