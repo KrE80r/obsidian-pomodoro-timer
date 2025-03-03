@@ -32,6 +32,8 @@ export interface Settings {
     taskFormat: TaskFormat
     lowFps: boolean
     includeQueriedTasks: boolean
+    queriedTasksIncludePaths: string
+    queriedTasksExcludePaths: string
 }
 
 export default class PomodoroSettings extends PluginSettingTab {
@@ -53,7 +55,9 @@ export default class PomodoroSettings extends PluginSettingTab {
         useSystemNotification: false,
         taskFormat: 'TASKS',
         lowFps: false,
-        includeQueriedTasks: false
+        includeQueriedTasks: false,
+        queriedTasksIncludePaths: '',
+        queriedTasksExcludePaths: ''
     }
 
     static settings: Writable<Settings> = writable(
@@ -178,14 +182,13 @@ export default class PomodoroSettings extends PluginSettingTab {
 
         new Setting(containerEl).setHeading().setName('Task')
         new Setting(containerEl)
-            .setName('Enable Task Tracking')
+            .setName('Enable task tracking')
             .setDesc(
-                'Important: Enabling this feature will automatically add a block ID when activating a task, unless a block ID is already present.',
+                'When enabled, if a task is active, its pomodoro count will be incremented',
             )
-            .addToggle((toggle) => {
-                toggle.setValue(this._settings.enableTaskTracking)
-                toggle.onChange((value) => {
-                    this.updateSettings({ enableTaskTracking: value })
+            .addToggle((t) => {
+                t.setValue(this._settings.enableTaskTracking).onChange((v) => {
+                    this.updateSettings({ enableTaskTracking: v })
                 })
             })
         new Setting(containerEl)
@@ -362,15 +365,38 @@ export default class PomodoroSettings extends PluginSettingTab {
                 }
             })
 
+        const includeQueriedTasksEnabled = this._settings.includeQueriedTasks && hasObsidianTasksPlugin;
+
         new Setting(containerEl)
-            .setName('Enable task tracking')
-            .setDesc(
-                'When enabled, if a task is active, its pomodoro count will be incremented',
-            )
-            .addToggle((t) => {
-                t.setValue(this._settings.enableTaskTracking).onChange((v) => {
-                    this.updateSettings({ enableTaskTracking: v })
-                })
-            })
+            .setName('Paths to include for queried tasks')
+            .setDesc('Comma-separated list of paths to include (leave empty for all paths). Example: "Daily Notes,Projects"')
+            .setDisabled(!includeQueriedTasksEnabled)
+            .addText((text) => {
+                text.setPlaceholder('folder1,folder2,file.md')
+                    .setValue(this._settings.queriedTasksIncludePaths)
+                    .onChange((value) => {
+                        this.updateSettings({ queriedTasksIncludePaths: value });
+                    });
+                if (!includeQueriedTasksEnabled) {
+                    text.setDisabled(true);
+                    text.inputEl.setAttr('placeholder', 'Enable queried tasks first');
+                }
+            });
+            
+        new Setting(containerEl)
+            .setName('Paths to exclude for queried tasks')
+            .setDesc('Comma-separated list of paths to exclude. Example: "Archive,Reference"')
+            .setDisabled(!includeQueriedTasksEnabled)
+            .addText((text) => {
+                text.setPlaceholder('folder1,folder2,file.md')
+                    .setValue(this._settings.queriedTasksExcludePaths)
+                    .onChange((value) => {
+                        this.updateSettings({ queriedTasksExcludePaths: value });
+                    });
+                if (!includeQueriedTasksEnabled) {
+                    text.setDisabled(true);
+                    text.inputEl.setAttr('placeholder', 'Enable queried tasks first');
+                }
+            });
     }
 }
