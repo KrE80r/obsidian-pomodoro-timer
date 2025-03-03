@@ -4,6 +4,7 @@ on:
     push:
         tags:
             - '*'
+    workflow_dispatch:
 
 jobs:
     build:
@@ -26,7 +27,12 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
               run: |
-                  tag="${GITHUB_REF#refs/tags/}"
+                  # For workflow_dispatch, use the SHA as tag if no tag exists
+                  if [[ -z "$GITHUB_REF_NAME" || "$GITHUB_REF_NAME" == "main" ]]; then
+                    tag="${GITHUB_SHA::7}"
+                  else
+                    tag="${GITHUB_REF#refs/tags/}"
+                  fi
 
                   gh release create "$tag" \
                     --title="$tag" \
