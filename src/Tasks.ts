@@ -470,53 +470,6 @@ export default class Tasks implements Readable<TaskStore> {
                 existingTasks.push(...state.list);
             })();
             
-            // Get the include/exclude path settings
-            const settings = this.plugin.getSettings();
-            const includePaths = settings.queriedTasksIncludePaths
-                .split(',')
-                .map(path => path.trim())
-                .filter(path => path.length > 0);
-            
-            const excludePaths = settings.queriedTasksExcludePaths
-                .split(',')
-                .map(path => path.trim())
-                .filter(path => path.length > 0);
-                
-            console.log("Pomodoro Timer: Using include paths:", includePaths);
-            console.log("Pomodoro Timer: Using exclude paths:", excludePaths);
-            
-            // Helper function to check if a path should be included based on settings
-            const shouldIncludePath = (path: string): boolean => {
-                // If no include paths are specified, include everything
-                if (includePaths.length === 0) {
-                    // Unless it's in the exclude list
-                    for (const excludePath of excludePaths) {
-                        if (path.includes(excludePath)) {
-                            console.log(`Pomodoro Timer: Excluding path ${path} (matches exclude pattern ${excludePath})`);
-                            return false;
-                        }
-                    }
-                    return true;
-                }
-                
-                // If include paths are specified, check if this path matches any
-                for (const includePath of includePaths) {
-                    if (path.includes(includePath)) {
-                        // But still check if it's in the exclude list
-                        for (const excludePath of excludePaths) {
-                            if (path.includes(excludePath)) {
-                                console.log(`Pomodoro Timer: Excluding path ${path} (matches exclude pattern ${excludePath})`);
-                                return false;
-                            }
-                        }
-                        return true;
-                    }
-                }
-                
-                console.log(`Pomodoro Timer: Excluding path ${path} (not in include list)`);
-                return false;
-            };
-            
             // Collect valid tasks
             for (const task of allTasks) {
                 try {
@@ -532,11 +485,6 @@ export default class Tasks implements Readable<TaskStore> {
                     // Skip tasks with invalid or empty file paths, unless they're from DOM extraction
                     if (!filePath && task.source !== 'dom') {
                         console.log("Skipping task with no file path:", taskText);
-                        continue;
-                    }
-                    
-                    // Check if this path should be included based on settings
-                    if (filePath && !shouldIncludePath(filePath)) {
                         continue;
                     }
                     
