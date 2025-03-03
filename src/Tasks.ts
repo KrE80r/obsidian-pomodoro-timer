@@ -184,14 +184,78 @@ export default class Tasks implements Readable<TaskStore> {
         )
     }
 
+    public loadFileTasks(file: TFile) {
+        if (file.extension !== 'md') return;
+
+        this.plugin.app.vault.cachedRead(file).then(async (content) => {
+            const tasks = await this.getTasksFromDataview(file) || 
+                         this.getTasksFromFile(file, content);
+            
+            this._store.update(() => ({ list: tasks }));
+        });
+    }
+
+    private async getTasksFromDataview(file: TFile): Promise<TaskItem[] | null> {
+        const query = this.plugin.getSettings().taskQuery?.trim();
+        if (!query) return null;
+
+        const dataviewPlugin = this.plugin.app.plugins.plugins['dataview'] as any;
+        if (!dataviewPlugin?.api) return null;
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                if (attempt > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+
+                if (dataviewPlugin.index && !dataviewPlugin.index.initialized) {
+                    console.log('Waiting for Dataview to finish indexing...');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
+                }
+
+                // Use query directly from settings
+                console.log(`Executing Dataview query (attempt ${attempt + 1}):`, query);
+                const result = await dataviewPlugin.api.query(query);
+                console.log('Query result:', result);
+
+                if (result?.successful) {
+                    const tasks = result.value?.values || [];
+                    console.log('Tasks found:', tasks.length);
+                    return tasks.map((t: DataviewTask) => this.convertToTaskItem(t, file));
+                }
+
+                if (attempt < 2) {
+                    console.log('Query failed, retrying...');
+                    continue;
+                }
+            } catch (error) {
+                console.error(`Dataview query attempt ${attempt + 1} failed:`, error);
+                if (attempt === 2) throw error;
+            }
+        }
+
+        return null;
+    }
+
+    private getTasksFromFile(file: TFile, content: string): TaskItem[] {
+        console.log('Using default task parsing');
+        return resolveTasks(
+            this.plugin.getSettings().taskFormat,
+            file,
+            content,
+            this.plugin.app.metadataCache.getFileCache(file),
+        );
+    }
+
     private convertToTaskItem(task: any, file: TFile): TaskItem {
         return {
             text: task.text || '',
-            path: task.path || file.path,
-            fileName: task.path ? task.path.split('/').pop() || '' : file.name,
+            path: task.link?.path || file.path,
+            fileName: task.link?.path ? task.link.path.split('/').pop() || '' : file.name,
             name: task.text || '',
             status: task.status || '',
-            blockLink: task.link || '',
+            blockLink: task.link?.path || '',
             checked: task.completed || false,
             description: task.text || '',
             done: '',
@@ -208,106 +272,6 @@ export default class Tasks implements Readable<TaskStore> {
             line: task.line || 0,
             heading: task.header || '',
         };
-    }
-
-    public loadFileTasks(file: TFile) {
-        if (file.extension == 'md') {
-            this.plugin.app.vault.cachedRead(file).then(async (c) => {
-                const query = this.plugin.getSettings().taskQuery?.trim();
-                
-                if (query) {
-                    const dataviewPlugin = this.plugin.app.plugins.plugins['dataview'] as any;
-                    console.log('Dataview plugin found:', dataviewPlugin);
-
-                    if (dataviewPlugin?.api) {
-                        let lastTasks: any[] = [];
-                        
-                        // Try up to 3 times with a delay
-                        for (let attempt = 0; attempt < 3; attempt++) {
-                            try {
-                                if (attempt > 0) {
-                                    await new Promise(resolve => setTimeout(resolve, 500));
-                                }
-
-                                // Check if Dataview is still indexing
-                                if (dataviewPlugin.index && !dataviewPlugin.index.initialized) {
-                                    console.log('Waiting for Dataview to finish indexing...');
-                                    await new Promise(resolve => setTimeout(resolve, 1000));
-                                    continue;
-                                }
-
-                                const dql = query.toUpperCase().startsWith('TASK') ? 
-                                    query : 
-                                    `TASK ${query}`;
-                                console.log(`Executing Dataview query (attempt ${attempt + 1}):`, dql);
-                                
-                                const result = await dataviewPlugin.api.query(dql);
-                                console.log('Query result:', result);
-
-                                if (result?.successful) {
-                                    // Handle the Dataview task array structure
-                                    lastTasks = result.value?.values || [];
-                                    console.log('Tasks extracted:', lastTasks);
-
-                                    // Always update with whatever tasks we found, even if empty
-                                    const convertedTasks = lastTasks.map((t: any) => ({
-                                        text: t.text || '',
-                                        path: t.link?.path || file.path,
-                                        fileName: t.link?.path ? t.link.path.split('/').pop() || '' : file.name,
-                                        name: t.text || '',
-                                        status: t.status || '',
-                                        blockLink: t.link?.path || '',
-                                        checked: t.completed || false,
-                                        description: t.text || '',
-                                        done: '',
-                                        due: t.due?.toString() || '',
-                                        created: t.created?.toString() || '',
-                                        cancelled: '',
-                                        scheduled: t.scheduled?.toString() || '',
-                                        start: '',
-                                        priority: t.priority || '',
-                                        recurrence: '',
-                                        expected: 0,
-                                        actual: 0,
-                                        tags: t.tags || [],
-                                        line: t.line || 0,
-                                        heading: t.header || '',
-                                    }));
-                                    
-                                    console.log('Converted tasks:', convertedTasks);
-                                    
-                                    this._store.update(() => ({
-                                        list: convertedTasks,
-                                    }));
-                                    return; // Exit here if query was successful, even if no tasks found
-                                }
-
-                                // Only continue retrying if query failed
-                                if (attempt < 2) {
-                                    console.log('Query failed, retrying...');
-                                    continue;
-                                }
-                            } catch (error) {
-                                console.error(`Error executing Dataview query (attempt ${attempt + 1}):`, error);
-                                if (attempt === 2) throw error;
-                            }
-                        }
-                    }
-                }
-
-                // Only fall back to default behavior if Dataview query wasn't successful
-                console.log('Using default task parsing');
-                let tasks = resolveTasks(
-                    this.plugin.getSettings().taskFormat,
-                    file,
-                    c,
-                    this.plugin.app.metadataCache.getFileCache(file),
-                );
-                this._store.update(() => ({
-                    list: tasks,
-                }));
-            });
-        }
     }
 
     private convertToDataviewQuery(tasksQuery: string): string {

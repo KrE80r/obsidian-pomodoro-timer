@@ -202,10 +202,21 @@ WHERE !completed`,
 
         new Setting(containerEl)
             .setName('Tasks Query')
-            .setDesc('Query to filter tasks shown in the pomodoro timer')
+            .setDesc('Dataview query to filter tasks')
             .addTextArea(text => {
-                text.inputEl.style.width = '100%';
-                text.inputEl.style.height = '100px';
+                const textArea = text.inputEl;
+                textArea.style.width = '100%';
+                textArea.style.height = '200px';
+                textArea.style.fontFamily = 'var(--font-monospace)';
+                textArea.style.fontSize = '14px';
+                textArea.style.padding = '12px';
+                textArea.style.marginTop = '8px';
+                textArea.style.marginBottom = '8px';
+                textArea.style.backgroundColor = 'var(--background-primary)';
+                textArea.style.border = '1px solid var(--background-modifier-border)';
+                textArea.style.borderRadius = '4px';
+                textArea.style.resize = 'vertical';
+
                 text.setValue(this._settings.taskQuery);
                 text.onChange((value) => {
                     this.updateSettings({ taskQuery: value });
