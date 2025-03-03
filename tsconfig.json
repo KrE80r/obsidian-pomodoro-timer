@@ -4,7 +4,6 @@
         "types": ["svelte", "node"],
         "baseUrl": "./src",
         "inlineSources": true,
-        "sourceMap": true,
         "module": "ESNext",
         "target": "ES6",
         "esModuleInterop": false,
@@ -14,7 +13,6 @@
         "importHelpers": true,
         "isolatedModules": true,
         "strictNullChecks": true,
-        "verbatimModuleSyntax": false,
         "lib": ["DOM", "ES5", "ES6", "ES7", "webworker"]
     },
     "include": ["**/*.ts"]

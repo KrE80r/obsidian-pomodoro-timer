@@ -3,7 +3,7 @@ import PomodoroTimerPlugin from 'main'
 import Worker from 'clock.worker'
 import { writable, derived } from 'svelte/store'
 import type { Readable } from 'svelte/store'
-import { TFile, Notice } from 'obsidian'
+import { Notice, TFile } from 'obsidian'
 import Logger, { type LogContext } from 'Logger'
 import DEFAULT_NOTIFICATION from 'Notification'
 import type { Unsubscriber } from 'svelte/motion'
@@ -36,8 +36,7 @@ const DEFAULT_TASK: TaskItem = {
     priority: '',
     recurrence: '',
     tags: [],
-    line: 0,
-    source: 'direct'
+    line: -1,
 }
 
 export type TimerState = {

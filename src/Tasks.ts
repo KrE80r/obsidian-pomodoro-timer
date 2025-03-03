@@ -1,6 +1,5 @@
 import PomodoroTimerPlugin from 'main'
-import type { CachedMetadata, App } from 'obsidian'
-import { TFile } from 'obsidian'
+import { type CachedMetadata, type TFile, type App } from 'obsidian'
 import { extractTaskComponents } from 'utils'
 import { writable, derived, type Readable, type Writable } from 'svelte/store'
 
@@ -29,7 +28,6 @@ export type TaskItem = {
     actual: number
     tags: string[]
     line: number
-    source: 'direct' | 'query'
 }
 
 export type TaskStore = {
@@ -93,45 +91,21 @@ export default class Tasks implements Readable<TaskStore> {
                             content,
                             cache,
                         )
-                        
-                        // Also load queried tasks if enabled
-                        if (this.plugin.getSettings().includeQueriedTasks) {
-                            this.loadQueriedTasks(file).then(queriedTasks => {
-                                this._store.update((state) => {
-                                    state.list = [...tasks, ...queriedTasks];
-                                    return state;
-                                });
-                                
-                                // sync active task
-                                if (this.plugin.tracker?.task?.blockLink) {
-                                    let task = [...tasks, ...queriedTasks].find(
-                                        (item) =>
-                                            item.blockLink &&
-                                            item.blockLink ===
-                                                this.plugin.tracker?.task?.blockLink,
-                                    )
-                                    if (task) {
-                                        this.plugin.tracker.sync(task)
-                                    }
-                                }
-                            });
-                        } else {
-                            this._store.update((state) => {
-                                state.list = tasks;
-                                return state;
-                            });
-                            
-                            // sync active task
-                            if (this.plugin.tracker?.task?.blockLink) {
-                                let task = tasks.find(
-                                    (item) =>
-                                        item.blockLink &&
-                                        item.blockLink ===
-                                            this.plugin.tracker?.task?.blockLink,
-                                )
-                                if (task) {
-                                    this.plugin.tracker.sync(task)
-                                }
+                        this._store.update((state) => {
+                            state.list = tasks
+                            return state
+                        })
+
+                        // sync active task
+                        if (this.plugin.tracker?.task?.blockLink) {
+                            let task = tasks.find(
+                                (item) =>
+                                    item.blockLink &&
+                                    item.blockLink ===
+                                        this.plugin.tracker?.task?.blockLink,
+                            )
+                            if (task) {
+                                this.plugin.tracker.sync(task)
                             }
                         }
                     }
@@ -149,112 +123,15 @@ export default class Tasks implements Readable<TaskStore> {
                     c,
                     this.plugin.app.metadataCache.getFileCache(file),
                 )
-                
-                // Also load queried tasks if enabled
-                if (this.plugin.getSettings().includeQueriedTasks) {
-                    this.loadQueriedTasks(file).then(queriedTasks => {
-                        this._store.update(() => ({
-                            list: [...tasks, ...queriedTasks],
-                        }));
-                    });
-                } else {
-                    this._store.update(() => ({
-                        list: tasks,
-                    }));
-                }
+                this._store.update(() => ({
+                    list: tasks,
+                }))
             })
         } else {
             this._store.update(() => ({
                 file,
                 list: [],
             }))
-        }
-    }
-
-    /**
-     * Load tasks from queries in the current file
-     */
-    private async loadQueriedTasks(file: TFile): Promise<TaskItem[]> {
-        // Check if Tasks plugin exists
-        const tasksPlugin = this.plugin.app.plugins.plugins['obsidian-tasks-plugin'];
-        if (!tasksPlugin) {
-            return [];
-        }
-
-        try {
-            // Get content and parse for task queries
-            const content = await this.plugin.app.vault.cachedRead(file);
-            const queriedTasks: TaskItem[] = [];
-            
-            // Look for task query code blocks in the content
-            const queryBlocks = content.match(/```tasks\n([\s\S]*?)```/g);
-            if (!queryBlocks || queryBlocks.length === 0) {
-                return [];
-            }
-            
-            // For each query block, try to get tasks from the Tasks plugin
-            for (const queryBlock of queryBlocks) {
-                // Get tasks from the Tasks plugin's cache if possible
-                // Using a more defensive approach to access potentially undefined properties
-                if (tasksPlugin.cache && 
-                    typeof tasksPlugin.cache === 'object' && 
-                    'getTasks' in tasksPlugin.cache && 
-                    typeof tasksPlugin.cache.getTasks === 'function') {
-                    
-                    const tasks = tasksPlugin.cache.getTasks();
-                    
-                    // Apply query filters (simplified version - in a real implementation 
-                    // you'd need to parse and apply the query conditions)
-                    for (const task of tasks) {
-                        // Convert to our TaskItem format
-                        if (task.file && task.file.path && task.line !== undefined) {
-                            const taskFile = this.plugin.app.vault.getAbstractFileByPath(task.file.path);
-                            if (taskFile instanceof TFile) {
-                                const fileContent = await this.plugin.app.vault.cachedRead(taskFile);
-                                const lines = fileContent.split('\n');
-                                if (task.line < lines.length) {
-                                    const line = lines[task.line];
-                                    const components = extractTaskComponents(line);
-                                    if (components) {
-                                        const detail = DESERIALIZERS[this.plugin.getSettings().taskFormat].deserialize(components.body);
-                                        const [actual, expected] = detail.pomodoros.split('/');
-                                        const dateformat = 'YYYY-MM-DD';
-                                        
-                                        queriedTasks.push({
-                                            text: line,
-                                            path: task.file.path,
-                                            fileName: taskFile.name,
-                                            name: detail.description,
-                                            status: components.status,
-                                            blockLink: components.blockLink,
-                                            checked: task.checked,
-                                            description: detail.description,
-                                            done: detail.doneDate?.format(dateformat) ?? '',
-                                            due: detail.dueDate?.format(dateformat) ?? '',
-                                            created: detail.createdDate?.format(dateformat) ?? '',
-                                            cancelled: detail.cancelledDate?.format(dateformat) ?? '',
-                                            scheduled: detail.scheduledDate?.format(dateformat) ?? '',
-                                            start: detail.startDate?.format(dateformat) ?? '',
-                                            priority: detail.priority,
-                                            recurrence: detail.recurrenceRule,
-                                            expected: expected ? parseInt(expected) : 0,
-                                            actual: actual === '' ? 0 : parseInt(actual),
-                                            tags: detail.tags,
-                                            line: task.line,
-                                            source: 'query'
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            return queriedTasks;
-        } catch (error) {
-            console.error('Error loading queried tasks:', error);
-            return [];
         }
     }
 
@@ -318,7 +195,6 @@ export function resolveTasks(
                 actual: actual === '' ? 0 : parseInt(actual),
                 tags: detail.tags,
                 line: lineNr,
-                source: 'direct'
             }
 
             cache[lineNr] = item
