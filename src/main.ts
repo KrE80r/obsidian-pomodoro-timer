@@ -90,6 +90,13 @@ export default class PomodoroTimerPlugin extends Plugin {
         )
     }
 
+    /**
+     * Check if the Tasks plugin is loaded
+     */
+    public isTasksPluginLoaded(): boolean {
+        return this.app.plugins.plugins['obsidian-tasks-plugin'] !== undefined;
+    }
+
     onunload() {
         this.settingTab?.unload()
         this.timer?.destroy()
