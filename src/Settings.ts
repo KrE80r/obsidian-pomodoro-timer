@@ -32,6 +32,7 @@ export interface Settings {
     useSystemNotification: boolean
     taskFormat: TaskFormat
     lowFps: boolean
+    taskQuery: string
 }
 
 export default class PomodoroSettings extends PluginSettingTab {
@@ -53,6 +54,8 @@ export default class PomodoroSettings extends PluginSettingTab {
         useSystemNotification: false,
         taskFormat: 'TASKS',
         lowFps: false,
+        taskQuery: `TASK FROM "0-Daily notes"
+WHERE !completed`,
     }
 
     static settings: Writable<Settings> = writable(
@@ -196,6 +199,18 @@ export default class PomodoroSettings extends PluginSettingTab {
                     )
                 })
             })
+
+        new Setting(containerEl)
+            .setName('Tasks Query')
+            .setDesc('Query to filter tasks shown in the pomodoro timer')
+            .addTextArea(text => {
+                text.inputEl.style.width = '100%';
+                text.inputEl.style.height = '100px';
+                text.setValue(this._settings.taskQuery);
+                text.onChange((value) => {
+                    this.updateSettings({ taskQuery: value });
+                });
+            });
 
         new Setting(containerEl).setHeading().setName('Log')
         new Setting(containerEl).setName('Log File').addDropdown((dropdown) => {
