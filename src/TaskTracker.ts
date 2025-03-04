@@ -230,10 +230,13 @@ export default class TaskTracker implements TaskTrackerStore {
         const lines = content.split('\n')
         
         // Normalize the blockLink - remove caret if present in the search parameter
-        const normalizedSearchBlockLink = blockLink.replace(/^\^/, '');
+        const normalizedSearchBlockLink = blockLink.replace(/^\^/, '').trim();
         console.log('DEBUG: Looking for block link:', blockLink);
         console.log('DEBUG: Normalized search block link:', normalizedSearchBlockLink);
 
+        let foundMatch = false;
+        let lineToUpdate = -1;
+        
         for (let rawElement of metadata.listItems || []) {
             if (rawElement.task) {
                 let lineNr = rawElement.position.start.line
@@ -261,6 +264,8 @@ export default class TaskTracker implements TaskTrackerStore {
                             '(comparing "' + componentBlockLink + '" with "' + normalizedSearchBlockLink + '")');
 
                 if (isMatch) {
+                    foundMatch = true;
+                    lineToUpdate = lineNr;
                     console.log('DEBUG: Found matching block link!');
 
                     // First check if we have a bracketed pomodoro count
@@ -337,27 +342,38 @@ export default class TaskTracker implements TaskTrackerStore {
                     
                     if (line !== originalLine) {
                         lines[lineNr] = line;
-                        
-                        await this.plugin.app.vault.modify(file, lines.join('\n'));
-                        
-                        this.plugin.app.metadataCache.trigger(
-                            'changed',
-                            file,
-                            content,
-                            metadata,
-                        );
-                        
-                        this.plugin.app.workspace
-                            .getActiveViewOfType(MarkdownView)
-                            ?.load();
-                        
-                        console.log('DEBUG: Successfully updated the file!');
                     } else {
                         console.log('DEBUG: No changes made to the line!');
+                        foundMatch = false; // Don't trigger file update if no changes
                     }
                     break;
                 }
             }
+        }
+        
+        // Only update the file if we found a match and made changes
+        if (foundMatch && lineToUpdate >= 0) {
+            // Update the file content
+            await this.plugin.app.vault.modify(file, lines.join('\n'));
+            
+            // Don't manually trigger metadata cache - let Obsidian handle it naturally
+            // this.plugin.app.metadataCache.trigger(
+            //     'changed',
+            //     file,
+            //     content,
+            //     metadata,
+            // );
+            
+            // Add a small delay before reloading the view to allow metadata to update
+            setTimeout(() => {
+                this.plugin.app.workspace
+                    .getActiveViewOfType(MarkdownView)
+                    ?.load();
+            }, 100);
+            
+            console.log('DEBUG: Successfully updated the file!');
+        } else {
+            console.log('DEBUG: No matching task found or no changes needed.');
         }
     }
 }
