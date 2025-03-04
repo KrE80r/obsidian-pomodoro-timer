@@ -356,22 +356,71 @@ export default class TaskTracker implements TaskTrackerStore {
             // Update the file content
             await this.plugin.app.vault.modify(file, lines.join('\n'));
             
-            // Don't manually trigger metadata cache - let Obsidian handle it naturally
-            // this.plugin.app.metadataCache.trigger(
-            //     'changed',
-            //     file,
-            //     content,
-            //     metadata,
-            // );
-            
-            // Add a small delay before reloading the view to allow metadata to update
-            setTimeout(() => {
-                this.plugin.app.workspace
-                    .getActiveViewOfType(MarkdownView)
-                    ?.load();
-            }, 100);
-            
             console.log('DEBUG: Successfully updated the file!');
+            
+            // Try a more direct plugin reload approach
+            setTimeout(async () => {
+                console.log('DEBUG: Attempting plugin reload approach');
+                
+                try {
+                    // 1. Get the plugin ID from our plugin
+                    const pluginId = this.plugin.manifest.id;
+                    console.log('DEBUG: Plugin ID:', pluginId);
+                    
+                    // 2. Attempt to reload the plugin
+                    // This technique directly targets the plugin system without relying on specific method names
+                    const plugins = this.plugin.app.plugins;
+                    
+                    // 3. Try different approaches to trigger a full reload
+                    
+                    // First try direct plugin reload
+                    if (typeof plugins.disablePlugin === 'function' && typeof plugins.enablePlugin === 'function') {
+                        console.log('DEBUG: Attempting plugin disable/enable cycle');
+                        
+                        // Create copies of any state we need to restore
+                        const currentView = this.plugin.app.workspace.activeLeaf?.view;
+                        const currentFile = this.plugin.app.workspace.getActiveFile();
+                        
+                        // Perform a quick disable/enable cycle
+                        try {
+                            await plugins.disablePlugin(pluginId);
+                            setTimeout(async () => {
+                                await plugins.enablePlugin(pluginId);
+                                console.log('DEBUG: Plugin re-enabled');
+                                
+                                // Restore the view if needed
+                                if (currentFile) {
+                                    this.plugin.app.workspace.getLeaf().openFile(currentFile);
+                                }
+                            }, 50);
+                        } catch (e) {
+                            console.log('DEBUG: Error during plugin reload:', e);
+                        }
+                    }
+                    
+                    // Alternative approach - trigger app-wide events
+                    console.log('DEBUG: Triggering app events');
+                    this.plugin.app.workspace.trigger('plugin-loaded', this.plugin);
+                    this.plugin.app.workspace.trigger('layout-change');
+                    this.plugin.app.workspace.trigger('css-change');
+                    
+                    // Focus on the file again to trigger UI updates
+                    if (file) {
+                        console.log('DEBUG: Re-triggering file-open event');
+                        this.plugin.app.workspace.trigger('file-open', file, false);
+                    }
+                    
+                    // Force active leaf reload
+                    const leaf = this.plugin.app.workspace.activeLeaf;
+                    if (leaf && leaf.view && typeof leaf.view.load === 'function') {
+                        console.log('DEBUG: Reloading active leaf view');
+                        leaf.view.load();
+                    }
+                    
+                } catch (e) {
+                    console.log('DEBUG: Error during plugin reload attempts:', e);
+                }
+            }, 1000); // Give more time for the file update to be processed
         } else {
             console.log('DEBUG: No matching task found or no changes needed.');
         }
