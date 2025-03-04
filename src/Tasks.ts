@@ -104,7 +104,41 @@ export default class Tasks implements Readable<TaskStore> {
         );
         
         if (task) {
-            this.plugin.tracker.sync(task);
+            console.log('Before sync - Task:', {
+                text: task.text,
+                actual: task.actual,
+                blockLink: task.blockLink
+            });
+
+            // Update the pomodoro count
+            const currentCount = task.actual || 0;
+            const newCount = currentCount + 1;
+            
+            // Update the task text with new pomodoro count
+            let updatedText = task.text;
+            if (task.text.includes('[🍅::')) {
+                // Update existing pomodoro count
+                updatedText = task.text.replace(/\[🍅::\s*\d+\]/, `[🍅:: ${newCount}]`);
+            } else {
+                // Add pomodoro count before the date and block ID
+                updatedText = task.text.replace(/(\s*➕\s+\d{4}-\d{2}-\d{2})?(\s*\^[\w\d-]+)?$/, 
+                    ` [🍅:: ${newCount}]$1$2`);
+            }
+
+            const updatedTask = {
+                ...task,
+                text: updatedText,
+                actual: newCount,
+                expected: Math.max(task.expected, newCount)
+            };
+
+            console.log('After sync - Updated Task:', {
+                text: updatedTask.text,
+                actual: updatedTask.actual,
+                blockLink: updatedTask.blockLink
+            });
+
+            this.plugin.tracker.sync(updatedTask);
         }
     }
 
@@ -173,19 +207,28 @@ export default class Tasks implements Readable<TaskStore> {
     }
 
     private convertToTaskItem(task: DataviewTask, file: TFile): TaskItem {
-        const fileName = task.link?.path ? 
-            task.link.path.split('/').pop() || '' : 
-            file.name;
+        // Extract pomodoro count before cleaning
+        const pomodoroMatch = task.text.match(/\[🍅::\s*(\d+)\]/);
+        const pomodoroCount = pomodoroMatch ? parseInt(pomodoroMatch[1]) : 0;
             
-        return {
-            text: task.text || '',
+        // Get the core task text without losing context
+        const cleanText = task.text;  // Keep original text to preserve context
+        const blockId = task.text.match(/\^([\w\d-]+)$/)?.[1] || '';  // Extract block ID if exists
+
+        // For display purposes only, not for storage
+        const displayText = task.text
+            .replace(/\s*\^[\w\d-]+$/, '')  // Remove block ID from display only
+            .trim();
+
+        const taskItem = {
+            text: cleanText,  // Keep original text with all metadata
             path: task.link?.path || file.path,
-            fileName,
-            name: task.text || '',
+            fileName: task.link?.path ? task.link.path.split('/').pop() || '' : file.name,
+            name: displayText,  // Use cleaned version for display
             status: task.status || '',
-            blockLink: task.link?.path || '',
+            blockLink: blockId,
             checked: task.completed || false,
-            description: task.text || '',
+            description: displayText,  // Use cleaned version for display
             done: '',
             due: task.due?.toString() || '',
             created: task.created?.toString() || '',
@@ -194,12 +237,14 @@ export default class Tasks implements Readable<TaskStore> {
             start: '',
             priority: task.priority || '',
             recurrence: '',
-            expected: 0,
-            actual: 0,
+            expected: pomodoroCount,
+            actual: pomodoroCount,
             tags: task.tags || [],
             line: task.line || 0,
             heading: task.header?.subpath || '',
         };
+
+        return taskItem;
     }
 
     public clearTasks() {
@@ -297,6 +342,9 @@ interface DataviewTask {
     priority?: string;
     tags: string[];
     line: number;
-    link: { path: string };
+    link: { 
+        path: string;
+        subpath?: string;
+    };
     header?: { subpath: string };
 }

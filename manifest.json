@@ -1,7 +1,7 @@
 {
 	"id": "pomodoro-timer",
 	"name": "Pomodoro Timer",
-	"version": "20.2.3",
+	"version": "1.2.4",
 	"minAppVersion": "0.15.0",
 	"description": "A pomodoro timer that helps manage your daily focus",
 	"author": "eatgrass",
