@@ -228,56 +228,134 @@ export default class TaskTracker implements TaskTrackerStore {
         }
 
         const lines = content.split('\n')
+        
+        // Normalize the blockLink - remove caret if present in the search parameter
+        const normalizedSearchBlockLink = blockLink.replace(/^\^/, '');
+        console.log('DEBUG: Looking for block link:', blockLink);
+        console.log('DEBUG: Normalized search block link:', normalizedSearchBlockLink);
 
         for (let rawElement of metadata.listItems || []) {
             if (rawElement.task) {
                 let lineNr = rawElement.position.start.line
-                let line = lines[lineNr]
+                let originalLine = lines[lineNr];
+                let line = originalLine;
+                
+                console.log('DEBUG: Examining line:', line);
 
                 const components = extractTaskComponents(line)
 
                 if (!components) {
                     continue
                 }
+                
+                console.log('DEBUG: Line components:', components);
+                
+                // Normalize the component blockLink for comparison
+                const componentBlockLink = components.blockLink.trim().replace(/^\^/, '');
+                console.log('DEBUG: Component block link:', components.blockLink);
+                console.log('DEBUG: Normalized component block link:', componentBlockLink);
+                
+                // Compare the normalized block links
+                const isMatch = componentBlockLink === normalizedSearchBlockLink;
+                console.log('DEBUG: Is match?', isMatch, 
+                            '(comparing "' + componentBlockLink + '" with "' + normalizedSearchBlockLink + '")');
 
-                if (components.blockLink === blockLink) {
-                    const match = components.body.match(POMODORO_REGEX)
-                    if (match !== null) {
-                        let pomodoros = match[1]
-                        let [actual, expected] = pomodoros.split('/')
-                        actual = actual || '0'
-                        let text = `🍅:: ${parseInt(actual) + 1}`
-                        if (expected !== undefined) {
-                            text += `/${expected.trim()}`
+                if (isMatch) {
+                    console.log('DEBUG: Found matching block link!');
+
+                    // First check if we have a bracketed pomodoro count
+                    const hasPomodoroCount = components.body.includes('[🍅::');
+                    console.log('DEBUG: Has pomodoro count?', hasPomodoroCount);
+                    
+                    if (hasPomodoroCount) {
+                        try {
+                            // Find the starting position of the pomodoro count
+                            const startPos = line.indexOf('[🍅::');
+                            if (startPos !== -1) {
+                                // Find the ending position (closing bracket)
+                                const endPos = line.indexOf(']', startPos);
+                                if (endPos !== -1) {
+                                    // Extract the pomodoro text
+                                    const pomodoroText = line.substring(startPos, endPos + 1);
+                                    console.log('DEBUG: Found pomodoro text:', pomodoroText);
+                                    
+                                    // Parse the count number
+                                    const countMatch = pomodoroText.match(/\[🍅::\s*(\d+)(?:\/(\d+))?\s*\]/);
+                                    if (countMatch) {
+                                        const currentCount = parseInt(countMatch[1] || '0');
+                                        console.log('DEBUG: Current count:', currentCount);
+                                        
+                                        // Create the new pomodoro text
+                                        let newPomodoroText = `[🍅:: ${currentCount + 1}`;
+                                        if (countMatch[2]) {
+                                            newPomodoroText += `/${countMatch[2]}`;
+                                        }
+                                        newPomodoroText += `]`;
+                                        
+                                        console.log('DEBUG: New pomodoro text:', newPomodoroText);
+                                        
+                                        // Build the new line by replacing just the pomodoro part
+                                        const newLine = line.substring(0, startPos) + 
+                                                        newPomodoroText + 
+                                                        line.substring(endPos + 1);
+                                        console.log('DEBUG: New line:', newLine);
+                                        
+                                        // Verify the replacement worked
+                                        if (newLine !== line) {
+                                            line = newLine;
+                                        } else {
+                                            console.log('DEBUG: WARNING - Line unchanged after replacement!');
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (error) {
+                            console.log('DEBUG: Error processing pomodoro count:', error);
                         }
-                        line = line
-                            .replace(/🍅:: *(\d* *\/? *\d* *)/, text)
-                            .trim()
                     } else {
-                        let detail = DESERIALIZERS[format].deserialize(
-                            components.body,
-                        )
-                        line = line.replace(
-                            detail.description,
-                            `${detail.description} [🍅:: 1]`,
-                        )
+                        console.log('DEBUG: No pomodoro count found, adding one');
+                        // Add a new pomodoro count before the block ID
+                        if (components.blockLink) {
+                            const blockPos = line.indexOf(components.blockLink);
+                            if (blockPos !== -1) {
+                                line = line.substring(0, blockPos) + 
+                                      ` [🍅:: 1]` + 
+                                      line.substring(blockPos);
+                            } else {
+                                // Fallback - add at the end
+                                line = line + ` [🍅:: 1]`;
+                            }
+                        } else {
+                            // No block ID, add at the end
+                            line = line + ` [🍅:: 1]`;
+                        }
                     }
-
-                    lines[lineNr] = line
-
-                    await this.plugin.app.vault.modify(file, lines.join('\n'))
-
-                    this.plugin.app.metadataCache.trigger(
-                        'changed',
-                        file,
-                        content,
-                        metadata,
-                    )
-
-                    this.plugin.app.workspace
-                        .getActiveViewOfType(MarkdownView)
-                        ?.load()
-                    break
+                    
+                    console.log('DEBUG: Final line:', line);
+                    console.log('DEBUG: Original line:', originalLine);
+                    console.log('DEBUG: Changed?', line !== originalLine);
+                    
+                    if (line !== originalLine) {
+                        lines[lineNr] = line;
+                        
+                        await this.plugin.app.vault.modify(file, lines.join('\n'));
+                        
+                        this.plugin.app.metadataCache.trigger(
+                            'changed',
+                            file,
+                            content,
+                            metadata,
+                        );
+                        
+                        this.plugin.app.workspace
+                            .getActiveViewOfType(MarkdownView)
+                            ?.load();
+                        
+                        console.log('DEBUG: Successfully updated the file!');
+                    } else {
+                        console.log('DEBUG: No changes made to the line!');
+                    }
+                    break;
                 }
             }
         }
