@@ -213,11 +213,19 @@ export default class Tasks implements Readable<TaskStore> {
             
         // Get the core task text without losing context
         const cleanText = task.text;  // Keep original text to preserve context
-        const blockId = task.text.match(/\^([\w\d-]+)$/)?.[1] || '';  // Extract block ID if exists
+        
+        // Improved block ID extraction - more robust regex
+        // This will find block IDs anywhere in the text, not just at the end
+        const blockIdMatch = task.text.match(/\s\^([\w\d-]+)(?:\s|$)/);
+        const blockId = blockIdMatch ? blockIdMatch[1] : '';
+        
+        console.log('DEBUG: Extracted block ID from Dataview task:', blockId);
+        console.log('DEBUG: Original task text:', task.text);
 
         // For display purposes only, not for storage
         const displayText = task.text
-            .replace(/\s*\^[\w\d-]+$/, '')  // Remove block ID from display only
+            .replace(/\s*\^[\w\d-]+(?:\s|$)/, ' ')  // Remove block ID from display only
+            .replace(/\[🍅::\s*\d+(?:\/\d+)?\]/, '') // Remove pomodoro count from display
             .trim();
 
         const taskItem = {
@@ -226,7 +234,7 @@ export default class Tasks implements Readable<TaskStore> {
             fileName: task.link?.path ? task.link.path.split('/').pop() || '' : file.name,
             name: displayText,  // Use cleaned version for display
             status: task.status || '',
-            blockLink: blockId,
+            blockLink: blockId ? `^${blockId}` : '', // Add the caret back for consistency
             checked: task.completed || false,
             description: displayText,  // Use cleaned version for display
             done: '',
