@@ -358,69 +358,47 @@ export default class TaskTracker implements TaskTrackerStore {
             
             console.log('DEBUG: Successfully updated the file!');
             
-            // Try a more direct plugin reload approach
-            setTimeout(async () => {
-                console.log('DEBUG: Attempting plugin reload approach');
+            // Try a simpler refresh approach that doesn't reload the plugin
+            try {
+                console.log('DEBUG: Attempting direct task refresh');
                 
-                try {
-                    // 1. Get the plugin ID from our plugin
-                    const pluginId = this.plugin.manifest.id;
-                    console.log('DEBUG: Plugin ID:', pluginId);
+                // Force Dataview to reindex this file
+                const dataviewPlugin = this.plugin.app.plugins.plugins?.dataview;
+                if (dataviewPlugin?.api) {
+                    const api = dataviewPlugin.api as any;
+                    if (api?.index?.touch) {
+                        api.index.touch(file.path);
+                    }
+                }
+                
+                // Try direct tasks refresh
+                const pluginAny = this.plugin as any;
+                if (pluginAny.tasks && typeof pluginAny.tasks.loadFileTasks === 'function') {
+                    console.log('DEBUG: Directly refreshing tasks');
+                    pluginAny.tasks.loadFileTasks(file);
+                }
+                
+                // Trigger a file refresh event
+                this.plugin.app.workspace.trigger('file-open', file, false);
+                
+                // Check task count after refresh
+                setTimeout(() => {
+                    const tasksCount = (this.plugin as any).tasks?.state?.list?.length || 0;
+                    console.log('DEBUG: Tasks found after refresh:', tasksCount);
                     
-                    // 2. Attempt to reload the plugin
-                    // This technique directly targets the plugin system without relying on specific method names
-                    const plugins = this.plugin.app.plugins;
-                    
-                    // 3. Try different approaches to trigger a full reload
-                    
-                    // First try direct plugin reload
-                    if (typeof plugins.disablePlugin === 'function' && typeof plugins.enablePlugin === 'function') {
-                        console.log('DEBUG: Attempting plugin disable/enable cycle');
-                        
-                        // Create copies of any state we need to restore
-                        const currentView = this.plugin.app.workspace.activeLeaf?.view;
-                        const currentFile = this.plugin.app.workspace.getActiveFile();
-                        
-                        // Perform a quick disable/enable cycle
-                        try {
-                            await plugins.disablePlugin(pluginId);
-                            setTimeout(async () => {
-                                await plugins.enablePlugin(pluginId);
-                                console.log('DEBUG: Plugin re-enabled');
-                                
-                                // Restore the view if needed
-                                if (currentFile) {
-                                    this.plugin.app.workspace.getLeaf().openFile(currentFile);
-                                }
-                            }, 50);
-                        } catch (e) {
-                            console.log('DEBUG: Error during plugin reload:', e);
+                    // If we didn't get enough tasks, try reloading the current view
+                    if (tasksCount < 10) {
+                        const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+                        if (view) {
+                            console.log('DEBUG: Reloading current view');
+                            view.load();
                         }
                     }
-                    
-                    // Alternative approach - trigger app-wide events
-                    console.log('DEBUG: Triggering app events');
-                    this.plugin.app.workspace.trigger('plugin-loaded', this.plugin);
-                    this.plugin.app.workspace.trigger('layout-change');
-                    this.plugin.app.workspace.trigger('css-change');
-                    
-                    // Focus on the file again to trigger UI updates
-                    if (file) {
-                        console.log('DEBUG: Re-triggering file-open event');
-                        this.plugin.app.workspace.trigger('file-open', file, false);
-                    }
-                    
-                    // Force active leaf reload
-                    const leaf = this.plugin.app.workspace.activeLeaf;
-                    if (leaf && leaf.view && typeof leaf.view.load === 'function') {
-                        console.log('DEBUG: Reloading active leaf view');
-                        leaf.view.load();
-                    }
-                    
-                } catch (e) {
-                    console.log('DEBUG: Error during plugin reload attempts:', e);
-                }
-            }, 1000); // Give more time for the file update to be processed
+                }, 500);
+                
+            } catch (e) {
+                console.log('DEBUG: Error during task refresh:', e);
+            }
         } else {
             console.log('DEBUG: No matching task found or no changes needed.');
         }

@@ -80,6 +80,11 @@ export default class Timer implements Readable<TimerStore> {
     constructor(plugin: PomodoroTimerPlugin) {
         this.plugin = plugin
         this.logger = new Logger(plugin)
+        
+        // Try to restore mode from plugin settings or localStorage
+        const savedMode = localStorage.getItem('pomodoro-timer-mode');
+        const initialMode = savedMode === 'BREAK' ? 'BREAK' : 'WORK';
+        
         let count = this.toMillis(plugin.getSettings().workLen)
         this.state = {
             autostart: plugin.getSettings().autostart,
@@ -87,12 +92,12 @@ export default class Timer implements Readable<TimerStore> {
             breakLen: plugin.getSettings().breakLen,
             running: false,
             // lastTick: 0,
-            mode: 'WORK',
+            mode: initialMode, // Use the restored mode
             elapsed: 0,
             startTime: null,
             inSession: false,
-            duration: plugin.getSettings().workLen,
-            count,
+            duration: initialMode === 'WORK' ? plugin.getSettings().workLen : plugin.getSettings().breakLen,
+            count: initialMode === 'WORK' ? count : this.toMillis(plugin.getSettings().breakLen),
         }
 
         let store = writable(this.state)
@@ -161,8 +166,30 @@ export default class Timer implements Readable<TimerStore> {
             autostart = state.autostart
             return this.endSession(state)
         })
+        
+        // Force a store update to ensure the UI reflects the new mode
+        // We need to specifically modify a property to trigger reactivity
+        this.update(state => {
+            // Force the derived store to recalculate by modifying a tracked property
+            // Adding a tiny amount to elapsed and then resetting ensures the UI updates
+            state.elapsed = 0.001
+            
+            // Immediately reset to proper value to avoid visual glitches
+            setTimeout(() => {
+                this.update(s => {
+                    s.elapsed = 0
+                    return s
+                })
+            }, 10)
+            
+            return state
+        })
+        
         if (autostart) {
-            this.start()
+            // Small delay before starting the next timer to give notifications time to show
+            setTimeout(() => {
+                this.start()
+            }, 100)
         }
     }
 
@@ -215,6 +242,10 @@ export default class Timer implements Readable<TimerStore> {
         } else {
             state.mode = state.mode == 'WORK' ? 'BREAK' : 'WORK'
         }
+        
+        // Save the new mode
+        this.saveCurrentMode(state.mode);
+        
         state.duration = state.mode == 'WORK' ? state.workLen : state.breakLen
         state.count = state.duration * 60 * 1000
         state.inSession = false
@@ -304,7 +335,11 @@ export default class Timer implements Readable<TimerStore> {
 
     public toggleMode(callback?: (state: TimerState) => void) {
         this.update((s) => {
-            let updated = this.endSession(s)
+            let updated = this.endSession(s);
+            
+            // Save the new mode
+            this.saveCurrentMode(updated.mode);
+            
             if (callback) {
                 callback(updated)
             }
@@ -353,5 +388,11 @@ export default class Timer implements Readable<TimerStore> {
         for (let unsub of this.unsubscribers) {
             unsub()
         }
+    }
+
+    // Add a method to save the current mode
+    private saveCurrentMode(mode: Mode) {
+        // Save to localStorage for persistence across reloads
+        localStorage.setItem('pomodoro-timer-mode', mode);
     }
 }
