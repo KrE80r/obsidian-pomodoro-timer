@@ -232,7 +232,6 @@ export default class TaskTracker implements TaskTrackerStore {
         // Normalize the blockLink - remove caret if present in the search parameter
         const normalizedSearchBlockLink = blockLink.replace(/^\^/, '').trim();
         console.log('DEBUG: Looking for block link:', blockLink);
-        console.log('DEBUG: Normalized search block link:', normalizedSearchBlockLink);
 
         let foundMatch = false;
         let lineToUpdate = -1;
@@ -243,26 +242,18 @@ export default class TaskTracker implements TaskTrackerStore {
                 let originalLine = lines[lineNr];
                 let line = originalLine;
                 
-                console.log('DEBUG: Examining line:', line);
-
                 const components = extractTaskComponents(line)
 
                 if (!components) {
                     continue
                 }
                 
-                console.log('DEBUG: Line components:', components);
-                
                 // Normalize the component blockLink for comparison
                 const componentBlockLink = components.blockLink.trim().replace(/^\^/, '');
-                console.log('DEBUG: Component block link:', components.blockLink);
-                console.log('DEBUG: Normalized component block link:', componentBlockLink);
                 
                 // Compare the normalized block links
                 const isMatch = componentBlockLink === normalizedSearchBlockLink;
-                console.log('DEBUG: Is match?', isMatch, 
-                            '(comparing "' + componentBlockLink + '" with "' + normalizedSearchBlockLink + '")');
-
+                
                 if (isMatch) {
                     foundMatch = true;
                     lineToUpdate = lineNr;
@@ -270,7 +261,6 @@ export default class TaskTracker implements TaskTrackerStore {
 
                     // First check if we have a bracketed pomodoro count
                     const hasPomodoroCount = components.body.includes('[🍅::');
-                    console.log('DEBUG: Has pomodoro count?', hasPomodoroCount);
                     
                     if (hasPomodoroCount) {
                         try {
@@ -282,13 +272,11 @@ export default class TaskTracker implements TaskTrackerStore {
                                 if (endPos !== -1) {
                                     // Extract the pomodoro text
                                     const pomodoroText = line.substring(startPos, endPos + 1);
-                                    console.log('DEBUG: Found pomodoro text:', pomodoroText);
                                     
                                     // Parse the count number
                                     const countMatch = pomodoroText.match(/\[🍅::\s*(\d+)(?:\/(\d+))?\s*\]/);
                                     if (countMatch) {
                                         const currentCount = parseInt(countMatch[1] || '0');
-                                        console.log('DEBUG: Current count:', currentCount);
                                         
                                         // Create the new pomodoro text
                                         let newPomodoroText = `[🍅:: ${currentCount + 1}`;
@@ -297,19 +285,14 @@ export default class TaskTracker implements TaskTrackerStore {
                                         }
                                         newPomodoroText += `]`;
                                         
-                                        console.log('DEBUG: New pomodoro text:', newPomodoroText);
-                                        
                                         // Build the new line by replacing just the pomodoro part
                                         const newLine = line.substring(0, startPos) + 
                                                         newPomodoroText + 
                                                         line.substring(endPos + 1);
-                                        console.log('DEBUG: New line:', newLine);
                                         
                                         // Verify the replacement worked
                                         if (newLine !== line) {
                                             line = newLine;
-                                        } else {
-                                            console.log('DEBUG: WARNING - Line unchanged after replacement!');
                                         }
                                     }
                                 }
@@ -318,7 +301,6 @@ export default class TaskTracker implements TaskTrackerStore {
                             console.log('DEBUG: Error processing pomodoro count:', error);
                         }
                     } else {
-                        console.log('DEBUG: No pomodoro count found, adding one');
                         // Add a new pomodoro count before the block ID
                         if (components.blockLink) {
                             const blockPos = line.indexOf(components.blockLink);
@@ -336,14 +318,9 @@ export default class TaskTracker implements TaskTrackerStore {
                         }
                     }
                     
-                    console.log('DEBUG: Final line:', line);
-                    console.log('DEBUG: Original line:', originalLine);
-                    console.log('DEBUG: Changed?', line !== originalLine);
-                    
                     if (line !== originalLine) {
                         lines[lineNr] = line;
                     } else {
-                        console.log('DEBUG: No changes made to the line!');
                         foundMatch = false; // Don't trigger file update if no changes
                     }
                     break;
@@ -358,10 +335,8 @@ export default class TaskTracker implements TaskTrackerStore {
             
             console.log('DEBUG: Successfully updated the file!');
             
-            // Try a simpler refresh approach that doesn't reload the plugin
+            // Simplified task refresh approach
             try {
-                console.log('DEBUG: Attempting direct task refresh');
-                
                 // Force Dataview to reindex this file
                 const dataviewPlugin = this.plugin.app.plugins.plugins?.dataview;
                 if (dataviewPlugin?.api) {
@@ -374,33 +349,14 @@ export default class TaskTracker implements TaskTrackerStore {
                 // Try direct tasks refresh
                 const pluginAny = this.plugin as any;
                 if (pluginAny.tasks && typeof pluginAny.tasks.loadFileTasks === 'function') {
-                    console.log('DEBUG: Directly refreshing tasks');
                     pluginAny.tasks.loadFileTasks(file);
                 }
                 
                 // Trigger a file refresh event
                 this.plugin.app.workspace.trigger('file-open', file, false);
-                
-                // Check task count after refresh
-                setTimeout(() => {
-                    const tasksCount = (this.plugin as any).tasks?.state?.list?.length || 0;
-                    console.log('DEBUG: Tasks found after refresh:', tasksCount);
-                    
-                    // If we didn't get enough tasks, try reloading the current view
-                    if (tasksCount < 10) {
-                        const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
-                        if (view) {
-                            console.log('DEBUG: Reloading current view');
-                            view.load();
-                        }
-                    }
-                }, 500);
-                
             } catch (e) {
                 console.log('DEBUG: Error during task refresh:', e);
             }
-        } else {
-            console.log('DEBUG: No matching task found or no changes needed.');
         }
     }
 }

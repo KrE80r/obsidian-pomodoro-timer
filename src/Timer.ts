@@ -167,26 +167,11 @@ export default class Timer implements Readable<TimerStore> {
             return this.endSession(state)
         })
         
-        // Force a store update to ensure the UI reflects the new mode
-        // We need to specifically modify a property to trigger reactivity
-        this.update(state => {
-            // Force the derived store to recalculate by modifying a tracked property
-            // Adding a tiny amount to elapsed and then resetting ensures the UI updates
-            state.elapsed = 0.001
-            
-            // Immediately reset to proper value to avoid visual glitches
-            setTimeout(() => {
-                this.update(s => {
-                    s.elapsed = 0
-                    return s
-                })
-            }, 10)
-            
-            return state
-        })
+        // Force a store update to trigger a UI refresh
+        // This is a cleaner approach than temporarily modifying elapsed
+        this.update(state => ({ ...state }))
         
         if (autostart) {
-            // Small delay before starting the next timer to give notifications time to show
             setTimeout(() => {
                 this.start()
             }, 100)
