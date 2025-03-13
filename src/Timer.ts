@@ -81,9 +81,9 @@ export default class Timer implements Readable<TimerStore> {
         this.plugin = plugin
         this.logger = new Logger(plugin)
         
-        // Try to restore mode from plugin settings or localStorage
-        const savedMode = localStorage.getItem('pomodoro-timer-mode');
-        const initialMode = savedMode === 'BREAK' ? 'BREAK' : 'WORK';
+        // Always start in WORK mode regardless of what was saved
+        // This ensures we don't continue in BREAK mode from a previous day
+        const initialMode: Mode = 'WORK';
         
         let count = this.toMillis(plugin.getSettings().workLen)
         this.state = {
@@ -92,12 +92,12 @@ export default class Timer implements Readable<TimerStore> {
             breakLen: plugin.getSettings().breakLen,
             running: false,
             // lastTick: 0,
-            mode: initialMode, // Use the restored mode
+            mode: initialMode, // Always use WORK mode on startup
             elapsed: 0,
             startTime: null,
             inSession: false,
-            duration: initialMode === 'WORK' ? plugin.getSettings().workLen : plugin.getSettings().breakLen,
-            count: initialMode === 'WORK' ? count : this.toMillis(plugin.getSettings().breakLen),
+            duration: plugin.getSettings().workLen, // Always use workLen for duration on startup
+            count: count, // Always use work count on startup
         }
 
         let store = writable(this.state)
@@ -228,7 +228,8 @@ export default class Timer implements Readable<TimerStore> {
             state.mode = state.mode == 'WORK' ? 'BREAK' : 'WORK'
         }
         
-        // Save the new mode
+        // Save the new mode to localStorage - this only affects the current session
+        // On startup, we'll always reset to WORK mode regardless of this value
         this.saveCurrentMode(state.mode);
         
         state.duration = state.mode == 'WORK' ? state.workLen : state.breakLen
@@ -377,7 +378,8 @@ export default class Timer implements Readable<TimerStore> {
 
     // Add a method to save the current mode
     private saveCurrentMode(mode: Mode) {
-        // Save to localStorage for persistence across reloads
+        // Save to localStorage for persistence within the current session
+        // This won't affect the startup mode, which is always set to WORK
         localStorage.setItem('pomodoro-timer-mode', mode);
     }
 }
