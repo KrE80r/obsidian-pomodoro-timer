@@ -82,6 +82,19 @@ export default class PomodoroTimerPlugin extends Plugin {
                 })
             },
         })
+        
+        // Add command to load tasks using Dataview query
+        this.addCommand({
+            id: 'load-tasks',
+            name: 'Load tasks from Dataview query',
+            callback: () => {
+                this.loadTasks();
+            },
+        })
+        
+        // Initial load of tasks
+        // This will now only use Dataview, never falling back to file parsing
+        this.loadTasks();
     }
 
     public getSettings(): Settings {
@@ -113,5 +126,12 @@ export default class PomodoroTimerPlugin extends Plugin {
         }
 
         workspace.revealLeaf(leaf)
+    }
+
+    public loadTasks() {
+        const file = this.app.workspace.getActiveFile();
+        if (file && this.tasks) {
+            this.tasks.loadFileTasks(file);
+        }
     }
 }

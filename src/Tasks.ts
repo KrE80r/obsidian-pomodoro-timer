@@ -66,12 +66,7 @@ export default class Tasks implements Readable<TaskStore> {
         this.unsubscribers.push(
             this._store.subscribe((state) => {
                 this.state = state
-            }),
-            derived(this.plugin.tracker!, ($tracker) => $tracker.file?.path)
-                .subscribe(() => {
-                    const file = this.plugin.tracker?.file
-                    file ? this.loadFileTasks(file) : this.clearTasks()
-                })
+            })
         );
     }
 
@@ -145,17 +140,29 @@ export default class Tasks implements Readable<TaskStore> {
     public loadFileTasks(file: TFile) {
         if (file.extension !== 'md') return;
 
-        this.plugin.app.vault.cachedRead(file).then(async (content) => {
-            const tasks = await this.getTasksFromDataview(file) || 
-                         this.getTasksFromFile(file, content);
+        this.plugin.app.vault.cachedRead(file).then(async () => {
+            // Only use Dataview query, never fall back to parsing the file
+            const tasks = await this.getTasksFromDataview(file);
             
-            this._store.update(() => ({ list: tasks }));
+            // Update the task list (even if tasks is null, which clears the list)
+            this._store.update(() => ({ list: tasks || [] }));
         });
     }
 
     private async getTasksFromDataview(file: TFile): Promise<TaskItem[] | null> {
         const query = this.plugin.getSettings().taskQuery?.trim();
-        if (!query) return null;
+        if (!query) {
+            console.warn('No Dataview query configured in settings');
+            if (this.plugin.app?.workspace) {
+                const Notice = this.plugin.app.workspace.containerEl.createEl('div');
+                Notice.setText('No Dataview query configured in Pomodoro Timer settings');
+                Notice.addClass('notice');
+                setTimeout(() => {
+                    Notice.remove();
+                }, 3000);
+            }
+            return null;
+        }
 
         const dataviewPlugin = this.plugin.app.plugins.plugins['dataview'] as any;
         if (!dataviewPlugin?.api) {
@@ -326,29 +333,41 @@ export default class Tasks implements Readable<TaskStore> {
             return;
         }
         
-        // Check if Dataview plugin is available when using DATAVIEW format
-        const isDataviewFormat = this.plugin.getSettings().taskFormat === 'DATAVIEW';
-        if (isDataviewFormat) {
-            const dataviewPlugin = this.plugin.app.plugins.plugins['dataview'] as any;
-            if (!dataviewPlugin?.api) {
-                console.warn('Dataview plugin not found but required for current task format');
-                if (this.plugin.app?.workspace) {
-                    const Notice = this.plugin.app.workspace.containerEl.createEl('div');
-                    Notice.setText('Dataview plugin required for task queries');
-                    Notice.addClass('notice');
-                    setTimeout(() => {
-                        Notice.remove();
-                    }, 3000);
-                }
-                return;
+        // Check if Dataview plugin is available
+        const dataviewPlugin = this.plugin.app.plugins.plugins['dataview'] as any;
+        if (!dataviewPlugin?.api) {
+            console.warn('Dataview plugin not found but required for task queries');
+            if (this.plugin.app?.workspace) {
+                const Notice = this.plugin.app.workspace.containerEl.createEl('div');
+                Notice.setText('Dataview plugin required for task queries');
+                Notice.addClass('notice');
+                setTimeout(() => {
+                    Notice.remove();
+                }, 3000);
             }
+            return;
+        }
+        
+        // Check if query is configured
+        const query = this.plugin.getSettings().taskQuery?.trim();
+        if (!query) {
+            console.warn('No Dataview query configured in settings');
+            if (this.plugin.app?.workspace) {
+                const Notice = this.plugin.app.workspace.containerEl.createEl('div');
+                Notice.setText('No Dataview query configured in settings');
+                Notice.addClass('notice');
+                setTimeout(() => {
+                    Notice.remove();
+                }, 3000);
+            }
+            return;
         }
         
         // Clear current tasks first
         this._store.update(() => ({ list: [] }));
         
         try {
-            // Load tasks with dataview query
+            // Load tasks with dataview query only (no file parsing fallback)
             await this.loadFileTasks(file);
             
             // Show a success notification
