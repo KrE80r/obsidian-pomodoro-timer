@@ -158,7 +158,18 @@ export default class Tasks implements Readable<TaskStore> {
         if (!query) return null;
 
         const dataviewPlugin = this.plugin.app.plugins.plugins['dataview'] as any;
-        if (!dataviewPlugin?.api) return null;
+        if (!dataviewPlugin?.api) {
+            console.warn('Dataview plugin not found or API not available');
+            if (this.plugin.app?.workspace) {
+                const Notice = this.plugin.app.workspace.containerEl.createEl('div');
+                Notice.setText('Dataview plugin required for task queries');
+                Notice.addClass('notice');
+                setTimeout(() => {
+                    Notice.remove();
+                }, 3000);
+            }
+            return null;
+        }
 
         for (let attempt = 0; attempt < 3; attempt++) {
             try {
@@ -174,6 +185,17 @@ export default class Tasks implements Readable<TaskStore> {
 
                 // Use query directly from settings
                 console.log(`Executing Dataview query (attempt ${attempt + 1}):`, query);
+                
+                // Show notification about executing query
+                if (attempt === 0 && this.plugin.app?.workspace) {
+                    const Notice = this.plugin.app.workspace.containerEl.createEl('div');
+                    Notice.setText('Executing Dataview query...');
+                    Notice.addClass('notice');
+                    setTimeout(() => {
+                        Notice.remove();
+                    }, 1500);
+                }
+                
                 const result = await dataviewPlugin.api.query(query);
                 console.log('Query result:', result);
 
@@ -186,9 +208,25 @@ export default class Tasks implements Readable<TaskStore> {
                 if (attempt < 2) {
                     console.log('Query failed, retrying...');
                     continue;
+                } else if (this.plugin.app?.workspace) {
+                    // Show error notification on final attempt
+                    const Notice = this.plugin.app.workspace.containerEl.createEl('div');
+                    Notice.setText('Dataview query failed');
+                    Notice.addClass('notice');
+                    setTimeout(() => {
+                        Notice.remove();
+                    }, 3000);
                 }
             } catch (error) {
                 console.error(`Dataview query attempt ${attempt + 1} failed:`, error);
+                if (attempt === 2 && this.plugin.app?.workspace) {
+                    const Notice = this.plugin.app.workspace.containerEl.createEl('div');
+                    Notice.setText('Error executing Dataview query');
+                    Notice.addClass('notice');
+                    setTimeout(() => {
+                        Notice.remove();
+                    }, 3000);
+                }
                 if (attempt === 2) throw error;
             }
         }
@@ -264,6 +302,74 @@ export default class Tasks implements Readable<TaskStore> {
     public destroy() {
         for (let unsub of this.unsubscribers) {
             unsub()
+        }
+    }
+
+    /**
+     * Reloads tasks based on the user's Dataview query from settings
+     * This method can be called from UI elements to refresh the task list
+     */
+    public async reloadTasks() {
+        console.log('Reloading tasks based on Dataview query...');
+        const file = this.plugin.tracker?.file;
+        
+        if (!file) {
+            console.warn('No active file to reload tasks from');
+            if (this.plugin.app?.workspace) {
+                const Notice = this.plugin.app.workspace.containerEl.createEl('div');
+                Notice.setText('No active file to reload tasks from');
+                Notice.addClass('notice');
+                setTimeout(() => {
+                    Notice.remove();
+                }, 2000);
+            }
+            return;
+        }
+        
+        // Check if Dataview plugin is available when using DATAVIEW format
+        const isDataviewFormat = this.plugin.getSettings().taskFormat === 'DATAVIEW';
+        if (isDataviewFormat) {
+            const dataviewPlugin = this.plugin.app.plugins.plugins['dataview'] as any;
+            if (!dataviewPlugin?.api) {
+                console.warn('Dataview plugin not found but required for current task format');
+                if (this.plugin.app?.workspace) {
+                    const Notice = this.plugin.app.workspace.containerEl.createEl('div');
+                    Notice.setText('Dataview plugin required for task queries');
+                    Notice.addClass('notice');
+                    setTimeout(() => {
+                        Notice.remove();
+                    }, 3000);
+                }
+                return;
+            }
+        }
+        
+        // Clear current tasks first
+        this._store.update(() => ({ list: [] }));
+        
+        try {
+            // Load tasks with dataview query
+            await this.loadFileTasks(file);
+            
+            // Show a success notification
+            if (this.plugin.app?.workspace) {
+                const Notice = this.plugin.app.workspace.containerEl.createEl('div');
+                Notice.setText('Tasks reloaded successfully');
+                Notice.addClass('notice');
+                setTimeout(() => {
+                    Notice.remove();
+                }, 2000);
+            }
+        } catch (error) {
+            console.error('Failed to reload tasks:', error);
+            if (this.plugin.app?.workspace) {
+                const Notice = this.plugin.app.workspace.containerEl.createEl('div');
+                Notice.setText('Failed to reload tasks');
+                Notice.addClass('notice');
+                setTimeout(() => {
+                    Notice.remove();
+                }, 2000);
+            }
         }
     }
 }
