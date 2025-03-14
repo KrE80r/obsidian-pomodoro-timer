@@ -171,8 +171,10 @@ export default class Logger {
                 const emoji = log.mode == 'WORK' ? '🍅' : '🥤'
                 
                 if (log.mode === 'WORK' && taskName) {
-                    // Task name only appears in the Dataview field, not duplicated in visible text
-                    return `- ${emoji} ✓ ${begin.format('YYYY-MM-DD')} | task:: ${taskName} | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`;
+                    // Create content for code block with Dataview fields but without the tick mark
+                    const content = `${begin.format('YYYY-MM-DD')} | task:: ${taskName} | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`;
+                    // Return format with highlighted background (code block) and no check mark
+                    return `- ${emoji} \`${content}\``;
                 } else if (log.mode === 'WORK') {
                     // Generic work session format
                     return `- ${emoji} \`${log.mode} ${log.duration} minute${log.duration !== 1 ? 's' : ''} ${begin.format('YYYY-MM-DD HH:mm')} - ${end.format('YYYY-MM-DD HH:mm')}\``;

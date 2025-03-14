@@ -359,7 +359,8 @@ WHERE !completed`,
         if (this._settings.logFormat == 'VERBOSE') {
             const beginTime = moment().subtract(25, 'minutes');
             const endTime = moment();
-            example = `- 🍅 ✓ ${beginTime.format('YYYY-MM-DD')} | task:: ${sampleTaskName} | mode:: WORK | duration:: 25m | time:: ${beginTime.format('YYYY-MM-DD HH:mm')} to ${endTime.format('HH:mm')}`
+            const content = `${beginTime.format('YYYY-MM-DD')} | task:: ${sampleTaskName} | mode:: WORK | duration:: 25m | time:: ${beginTime.format('YYYY-MM-DD HH:mm')} to ${endTime.format('HH:mm')}`;
+            example = `- 🍅 \`${content}\``;
         }
         new Setting(containerEl)
             .setName('Log Format')
