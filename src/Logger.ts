@@ -165,25 +165,31 @@ export default class Logger {
                 const displayName = log.mode === 'WORK' && taskName 
                     ? taskName 
                     : log.mode;
-                return `**${displayName}(${log.duration}m)**: ${begin.format(
-                    'HH:mm',
-                )} - ${end.format('HH:mm')}`
+                // Use backticks for code highlighting
+                return `- 🍅 \`${displayName} ${log.duration} minute${log.duration !== 1 ? 's' : ''} ${begin.format(
+                    'YYYY-MM-DD HH:mm',
+                )} - ${end.format('YYYY-MM-DD HH:mm')}\``
             }
 
             if (settings.logFormat === 'VERBOSE') {
                 const emoji = log.mode == 'WORK' ? '🍅' : '🥤'
                 
                 // New format optimized for both human readability and Dataview
+                let content = '';
+                
                 if (log.mode === 'WORK' && taskName) {
-                    // Work session with task
-                    return `- ${emoji} **${taskName}** | task:: ${taskName} | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`
+                    // Work session with task - create the content for code block
+                    content = `${emoji} ${taskName} 📆 ${begin.format('YYYY-MM-DD')} | task:: ${taskName} | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`;
                 } else if (log.mode === 'WORK') {
                     // Work session without specific task
-                    return `- ${emoji} **Work Session** | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`
+                    content = `${emoji} Work Session | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`;
                 } else {
                     // Break session
-                    return `- ${emoji} **Break** | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`
+                    content = `${emoji} Break | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`;
                 }
+                
+                // Wrap in bullet + code block to create highlighted background
+                return `- \`${content}\``;
             }
 
             return ''
