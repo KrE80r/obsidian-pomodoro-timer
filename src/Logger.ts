@@ -158,10 +158,14 @@ export default class Logger {
             // Get task name if available for WORK mode
             const taskName = (log.mode === 'WORK' && log.task?.name) 
                 ? log.task.name.trim() 
-                : log.mode;
+                : '';
                 
             if (settings.logFormat === 'SIMPLE') {
-                return `**${taskName}(${log.duration}m)**: ${begin.format(
+                // Keep SIMPLE format mostly the same but with clearer session type
+                const displayName = log.mode === 'WORK' && taskName 
+                    ? taskName 
+                    : log.mode;
+                return `**${displayName}(${log.duration}m)**: ${begin.format(
                     'HH:mm',
                 )} - ${end.format('HH:mm')}`
             }
@@ -169,16 +173,17 @@ export default class Logger {
             if (settings.logFormat === 'VERBOSE') {
                 const emoji = log.mode == 'WORK' ? '🍅' : '🥤'
                 
-                // For VERBOSE format, show task name for WORK mode
-                const modeText = log.mode === 'WORK' && log.task?.name
-                    ? `${log.mode}: ${log.task.name}`
-                    : log.mode;
-                    
-                return `- ${emoji} (pomodoro::${modeText}) (duration:: ${
-                    log.duration
-                }m) (begin:: ${begin.format(
-                    'YYYY-MM-DD HH:mm',
-                )}) - (end:: ${end.format('YYYY-MM-DD HH:mm')})`
+                // New format optimized for both human readability and Dataview
+                if (log.mode === 'WORK' && taskName) {
+                    // Work session with task
+                    return `- ${emoji} **${taskName}** | task:: ${taskName} | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`
+                } else if (log.mode === 'WORK') {
+                    // Work session without specific task
+                    return `- ${emoji} **Work Session** | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`
+                } else {
+                    // Break session
+                    return `- ${emoji} **Break** | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`
+                }
             }
 
             return ''

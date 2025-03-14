@@ -357,11 +357,9 @@ WHERE !completed`,
                 .format('HH:mm')} - ${moment().format('HH:mm')}`
         }
         if (this._settings.logFormat == 'VERBOSE') {
-            example = `- 🍅 (pomodoro::WORK: ${sampleTaskName}) (duration:: 25m) (begin:: ${moment()
-                .subtract(25, 'minutes')
-                .format('YYYY-MM-DD HH:mm')}) - (end:: ${moment().format(
-                'YYYY-MM-DD HH:mm',
-            )})`
+            const beginTime = moment().subtract(25, 'minutes');
+            const endTime = moment();
+            example = `- 🍅 **${sampleTaskName}** | task:: ${sampleTaskName} | mode:: WORK | duration:: 25m | time:: ${beginTime.format('YYYY-MM-DD HH:mm')} to ${endTime.format('HH:mm')}`
         }
         new Setting(containerEl)
             .setName('Log Format')
