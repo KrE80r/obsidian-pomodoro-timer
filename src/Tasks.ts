@@ -92,49 +92,175 @@ export default class Tasks implements Readable<TaskStore> {
     }
 
     private syncActiveTask(tasks: TaskItem[]) {
-        if (!this.plugin.tracker?.task?.blockLink) return;
+        if (!this.plugin.tracker?.task) return;
         
-        const task = tasks.find(item => 
-            item.blockLink && item.blockLink === this.plugin.tracker?.task?.blockLink
-        );
+        // Multiple identification methods for maximum reliability
+        const activeTask = this.findTaskByMultipleIdentifiers(tasks);
         
-        if (task) {
-            console.log('Before sync - Task:', {
-                text: task.text,
-                actual: task.actual,
-                blockLink: task.blockLink
+        if (activeTask) {
+            console.log('Task found for sync:', {
+                text: activeTask.text,
+                current_actual: activeTask.actual,
+                blockLink: activeTask.blockLink
             });
 
             // Update the pomodoro count
-            const currentCount = task.actual || 0;
+            const currentCount = activeTask.actual || 0;
             const newCount = currentCount + 1;
             
-            // Update the task text with new pomodoro count
-            let updatedText = task.text;
-            if (task.text.includes('[🍅::')) {
-                // Update existing pomodoro count
-                updatedText = task.text.replace(/\[🍅::\s*\d+\]/, `[🍅:: ${newCount}]`);
-            } else {
-                // Add pomodoro count before the date and block ID
-                updatedText = task.text.replace(/(\s*➕\s+\d{4}-\d{2}-\d{2})?(\s*\^[\w\d-]+)?$/, 
-                    ` [🍅:: ${newCount}]$1$2`);
-            }
+            // Create updated task with new count
+            const updatedTask = this.updateTaskWithPomodoroCount(activeTask, newCount);
 
-            const updatedTask = {
-                ...task,
-                text: updatedText,
-                actual: newCount,
-                expected: Math.max(task.expected, newCount)
-            };
-
-            console.log('After sync - Updated Task:', {
+            console.log('Updated task for sync:', {
                 text: updatedTask.text,
-                actual: updatedTask.actual,
+                new_actual: updatedTask.actual,
                 blockLink: updatedTask.blockLink
             });
 
             this.plugin.tracker.sync(updatedTask);
+        } else {
+            console.warn('Could not find task to update pomodoro count', {
+                trackerTaskBlockLink: this.plugin.tracker?.task?.blockLink,
+                availableTasks: tasks.length
+            });
         }
+    }
+
+    /**
+     * Find a task using multiple identification methods for robustness
+     */
+    private findTaskByMultipleIdentifiers(tasks: TaskItem[]): TaskItem | undefined {
+        const trackerTask = this.plugin.tracker?.task;
+        if (!trackerTask) return undefined;
+        
+        // Method 1: Find by blockLink (most reliable if available)
+        if (trackerTask.blockLink) {
+            const taskByBlockLink = tasks.find(item => 
+                item.blockLink && item.blockLink === trackerTask.blockLink
+            );
+            if (taskByBlockLink) {
+                console.log('Task identified by blockLink', taskByBlockLink.blockLink);
+                return taskByBlockLink;
+            }
+        }
+        
+        // Method 2: Find by text content (excluding metadata like dates and block IDs)
+        if (trackerTask.description) {
+            const normalizedTargetDesc = this.normalizeTaskText(trackerTask.description);
+            const taskByDesc = tasks.find(item => {
+                const normalizedItemDesc = this.normalizeTaskText(item.description);
+                return normalizedTargetDesc === normalizedItemDesc;
+            });
+            
+            if (taskByDesc) {
+                console.log('Task identified by description content match');
+                return taskByDesc;
+            }
+        }
+        
+        // Method 3: Find by line number (as last resort)
+        if (trackerTask.line !== undefined) {
+            const taskByLine = tasks.find(item => 
+                item.line === trackerTask.line
+            );
+            if (taskByLine) {
+                console.log('Task identified by line number', taskByLine.line);
+                return taskByLine;
+            }
+        }
+        
+        return undefined;
+    }
+    
+    /**
+     * Normalize task text for comparison by removing metadata, dates, pomodoro counts, etc.
+     */
+    private normalizeTaskText(text: string): string {
+        return text
+            .replace(/\[🍅::\s*\d+(?:\/\d+)?\]/g, '') // Remove pomodoro counts
+            .replace(/➕\s+\d{4}-\d{2}-\d{2}/g, '')    // Remove created date
+            .replace(/📅\s+\d{4}-\d{2}-\d{2}/g, '')    // Remove due date
+            .replace(/⏳\s+\d{4}-\d{2}-\d{2}/g, '')    // Remove scheduled date
+            .replace(/✅\s+\d{4}-\d{2}-\d{2}/g, '')    // Remove completed date
+            .replace(/\s\^[\w\d-]+/g, '')            // Remove block IDs
+            .replace(/\s+#[\w\d/-]+/g, '')           // Remove tags
+            .replace(/\s+/g, ' ')                    // Normalize whitespace
+            .trim();
+    }
+    
+    /**
+     * Update task with a new pomodoro count, handling different formats
+     */
+    private updateTaskWithPomodoroCount(task: TaskItem, newCount: number): TaskItem {
+        // Start with the original task text
+        let updatedText = task.text;
+        
+        // Check for existing pomodoro count with different possible formats
+        const pomodoroPatterns = [
+            /\[🍅::\s*\d+\]/,          // Standard format [🍅:: 3]
+            /🍅\s*\d+/,                // Simple format 🍅 3
+            /\[\s*🍅\s*:\s*\d+\s*\]/   // Alternative format [🍅: 3]
+        ];
+        
+        let patternFound = false;
+        
+        for (const pattern of pomodoroPatterns) {
+            if (pattern.test(updatedText)) {
+                // Replace existing pomodoro count using the same format that was found
+                updatedText = updatedText.replace(pattern, (match) => {
+                    // Keep the same format, just update the number
+                    if (match.includes('::')) {
+                        return `[🍅:: ${newCount}]`;
+                    } else if (match.includes(':')) {
+                        return `[🍅: ${newCount}]`;
+                    } else {
+                        return `🍅 ${newCount}`;
+                    }
+                });
+                patternFound = true;
+                break;
+            }
+        }
+        
+        // If no pomodoro count exists, add it in the standard format before metadata
+        if (!patternFound) {
+            // Look for common task metadata patterns to insert before
+            const metadataPatterns = [
+                /\s+➕\s+\d{4}-\d{2}-\d{2}/,  // Created date
+                /\s+📅\s+\d{4}-\d{2}-\d{2}/,  // Due date
+                /\s+⏳\s+\d{4}-\d{2}-\d{2}/,  // Scheduled date
+                /\s+✅\s+\d{4}-\d{2}-\d{2}/,  // Completed date
+                /\s+#[\w\d/-]+/,             // Tags
+                /\s+\^[\w\d-]+/              // Block ID
+            ];
+            
+            let insertPosition = updatedText.length;
+            
+            for (const pattern of metadataPatterns) {
+                const match = updatedText.match(pattern);
+                if (match && match.index !== undefined && match.index < insertPosition) {
+                    insertPosition = match.index;
+                }
+            }
+            
+            // Insert the pomodoro count at the appropriate position
+            if (insertPosition < updatedText.length) {
+                updatedText = 
+                    updatedText.substring(0, insertPosition) + 
+                    ` [🍅:: ${newCount}]` + 
+                    updatedText.substring(insertPosition);
+            } else {
+                // Just append to the end if no metadata found
+                updatedText += ` [🍅:: ${newCount}]`;
+            }
+        }
+        
+        return {
+            ...task,
+            text: updatedText,
+            actual: newCount,
+            expected: Math.max(task.expected || 0, newCount)
+        };
     }
 
     public loadFileTasks(file: TFile) {
