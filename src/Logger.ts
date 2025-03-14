@@ -154,15 +154,27 @@ export default class Logger {
 
             let begin = moment(log.begin)
             let end = moment(log.end)
+            
+            // Get task name if available for WORK mode
+            const taskName = (log.mode === 'WORK' && log.task?.name) 
+                ? log.task.name.trim() 
+                : log.mode;
+                
             if (settings.logFormat === 'SIMPLE') {
-                return `**${log.mode}(${log.duration}m)**: ${begin.format(
+                return `**${taskName}(${log.duration}m)**: ${begin.format(
                     'HH:mm',
                 )} - ${end.format('HH:mm')}`
             }
 
             if (settings.logFormat === 'VERBOSE') {
                 const emoji = log.mode == 'WORK' ? '🍅' : '🥤'
-                return `- ${emoji} (pomodoro::${log.mode}) (duration:: ${
+                
+                // For VERBOSE format, show task name for WORK mode
+                const modeText = log.mode === 'WORK' && log.task?.name
+                    ? `${log.mode}: ${log.task.name}`
+                    : log.mode;
+                    
+                return `- ${emoji} (pomodoro::${modeText}) (duration:: ${
                     log.duration
                 }m) (begin:: ${begin.format(
                     'YYYY-MM-DD HH:mm',
