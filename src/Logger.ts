@@ -161,12 +161,8 @@ export default class Logger {
                 : '';
                 
             if (settings.logFormat === 'SIMPLE') {
-                // Keep SIMPLE format mostly the same but with clearer session type
-                const displayName = log.mode === 'WORK' && taskName 
-                    ? taskName 
-                    : log.mode;
-                // Use backticks for code highlighting
-                return `- 🍅 \`${displayName} ${log.duration} minute${log.duration !== 1 ? 's' : ''} ${begin.format(
+                // Format to match the screenshot style
+                return `- 🍅 \`${log.mode} ${log.duration} minute${log.duration !== 1 ? 's' : ''} ${begin.format(
                     'YYYY-MM-DD HH:mm',
                 )} - ${end.format('YYYY-MM-DD HH:mm')}\``
             }
@@ -174,22 +170,16 @@ export default class Logger {
             if (settings.logFormat === 'VERBOSE') {
                 const emoji = log.mode == 'WORK' ? '🍅' : '🥤'
                 
-                // New format optimized for both human readability and Dataview
-                let content = '';
-                
                 if (log.mode === 'WORK' && taskName) {
-                    // Work session with task - create the content for code block
-                    content = `${emoji} ${taskName} 📆 ${begin.format('YYYY-MM-DD')} | task:: ${taskName} | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`;
+                    // Task name only appears in the Dataview field, not duplicated in visible text
+                    return `- ${emoji} ✓ ${begin.format('YYYY-MM-DD')} | task:: ${taskName} | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`;
                 } else if (log.mode === 'WORK') {
-                    // Work session without specific task
-                    content = `${emoji} Work Session | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`;
+                    // Generic work session format
+                    return `- ${emoji} \`${log.mode} ${log.duration} minute${log.duration !== 1 ? 's' : ''} ${begin.format('YYYY-MM-DD HH:mm')} - ${end.format('YYYY-MM-DD HH:mm')}\``;
                 } else {
-                    // Break session
-                    content = `${emoji} Break | mode:: ${log.mode} | duration:: ${log.duration}m | time:: ${begin.format('YYYY-MM-DD HH:mm')} to ${end.format('HH:mm')}`;
+                    // Break session format
+                    return `- ${emoji} \`${log.mode} ${log.duration} minute${log.duration !== 1 ? 's' : ''} ${begin.format('YYYY-MM-DD HH:mm')} - ${end.format('YYYY-MM-DD HH:mm')}\``;
                 }
-                
-                // Wrap in bullet + code block to create highlighted background
-                return `- \`${content}\``;
             }
 
             return ''

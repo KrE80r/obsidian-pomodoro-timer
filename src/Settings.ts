@@ -354,13 +354,12 @@ WHERE !completed`,
         if (this._settings.logFormat == 'SIMPLE') {
             const beginTime = moment().subtract(25, 'minutes');
             const endTime = moment();
-            example = `- 🍅 \`${sampleTaskName} 25 minutes ${beginTime.format('YYYY-MM-DD HH:mm')} - ${endTime.format('YYYY-MM-DD HH:mm')}\``
+            example = `- 🍅 \`WORK 25 minutes ${beginTime.format('YYYY-MM-DD HH:mm')} - ${endTime.format('YYYY-MM-DD HH:mm')}\``
         }
         if (this._settings.logFormat == 'VERBOSE') {
             const beginTime = moment().subtract(25, 'minutes');
             const endTime = moment();
-            const content = `🍅 ${sampleTaskName} 📆 ${beginTime.format('YYYY-MM-DD')} | task:: ${sampleTaskName} | mode:: WORK | duration:: 25m | time:: ${beginTime.format('YYYY-MM-DD HH:mm')} to ${endTime.format('HH:mm')}`;
-            example = `- \`${content}\``
+            example = `- 🍅 ✓ ${beginTime.format('YYYY-MM-DD')} | task:: ${sampleTaskName} | mode:: WORK | duration:: 25m | time:: ${beginTime.format('YYYY-MM-DD HH:mm')} to ${endTime.format('HH:mm')}`
         }
         new Setting(containerEl)
             .setName('Log Format')
