@@ -94,6 +94,67 @@ export default class Tasks implements Readable<TaskStore> {
     private syncActiveTask(tasks: TaskItem[]) {
         if (!this.plugin.tracker?.task) return;
         
+        // If no tasks are available, try to reload them first
+        if (!tasks || tasks.length === 0) {
+            console.log('No tasks available for sync, attempting to reload tasks first');
+            // First check if we have a file to work with
+            const file = this.plugin.tracker?.file;
+            if (!file) {
+                console.warn('Cannot reload tasks: No active file in tracker');
+                return;
+            }
+            
+            // Force reload tasks from Dataview
+            this.getTasksFromDataview(file).then(reloadedTasks => {
+                if (reloadedTasks && reloadedTasks.length > 0) {
+                    console.log(`Successfully reloaded ${reloadedTasks.length} tasks from Dataview`);
+                    // Update the task store
+                    this._store.update(state => ({ ...state, list: reloadedTasks }));
+                    // Now try again with the reloaded tasks
+                    this.syncActiveTaskWithTasks(reloadedTasks);
+                } else {
+                    console.warn('Failed to reload tasks from Dataview, trying direct file parsing');
+                    // As a last resort, try parsing tasks directly from the file
+                    this.plugin.app.vault.cachedRead(file).then(content => {
+                        const cache = this.plugin.app.metadataCache.getFileCache(file);
+                        const parsedTasks = resolveTasks(
+                            this.plugin.getSettings().taskFormat,
+                            file,
+                            content,
+                            cache
+                        );
+                        
+                        if (parsedTasks && parsedTasks.length > 0) {
+                            console.log(`Successfully parsed ${parsedTasks.length} tasks from file`);
+                            // Update the task store
+                            this._store.update(state => ({ ...state, list: parsedTasks }));
+                            // Try syncing again with parsed tasks
+                            this.syncActiveTaskWithTasks(parsedTasks);
+                        } else {
+                            console.error('Failed to load any tasks, cannot update pomodoro count');
+                        }
+                    }).catch(error => {
+                        console.error('Error parsing file for tasks:', error);
+                    });
+                }
+            }).catch(error => {
+                console.error('Error reloading tasks from Dataview:', error);
+            });
+            
+            return; // Exit early, sync will be called after reloading if successful
+        }
+        
+        // If we have tasks, proceed with synchronization
+        this.syncActiveTaskWithTasks(tasks);
+    }
+    
+    /**
+     * Sync the active task with the provided tasks list
+     * This is separated from syncActiveTask to allow for recursive calls after reloading tasks
+     */
+    private syncActiveTaskWithTasks(tasks: TaskItem[]) {
+        if (!this.plugin.tracker?.task) return;
+        
         // Multiple identification methods for maximum reliability
         const activeTask = this.findTaskByMultipleIdentifiers(tasks);
         
@@ -119,9 +180,13 @@ export default class Tasks implements Readable<TaskStore> {
 
             this.plugin.tracker.sync(updatedTask);
         } else {
+            // Additional logging to help diagnose the issue
             console.warn('Could not find task to update pomodoro count', {
                 trackerTaskBlockLink: this.plugin.tracker?.task?.blockLink,
-                availableTasks: tasks.length
+                trackerTaskDescription: this.plugin.tracker?.task?.description,
+                trackerTaskLine: this.plugin.tracker?.task?.line,
+                availableTasks: tasks.length,
+                taskBlockLinks: tasks.map(t => t.blockLink).join(', '),
             });
         }
     }
@@ -135,11 +200,20 @@ export default class Tasks implements Readable<TaskStore> {
         
         // Method 1: Find by blockLink (most reliable if available)
         if (trackerTask.blockLink) {
-            const taskByBlockLink = tasks.find(item => 
-                item.blockLink && item.blockLink === trackerTask.blockLink
-            );
+            // Normalize block IDs for comparison (handle both formats with and without ^)
+            const trackerBlockId = this.normalizeBlockId(trackerTask.blockLink);
+            
+            const taskByBlockLink = tasks.find(item => {
+                if (!item.blockLink) return false;
+                const itemBlockId = this.normalizeBlockId(item.blockLink);
+                return itemBlockId === trackerBlockId;
+            });
+            
             if (taskByBlockLink) {
-                console.log('Task identified by blockLink', taskByBlockLink.blockLink);
+                console.log('Task identified by blockLink', { 
+                    trackerBlockId,
+                    taskBlockId: this.normalizeBlockId(taskByBlockLink.blockLink)
+                });
                 return taskByBlockLink;
             }
         }
@@ -170,6 +244,15 @@ export default class Tasks implements Readable<TaskStore> {
         }
         
         return undefined;
+    }
+    
+    /**
+     * Normalize a block ID by removing the caret prefix if present
+     * and ensuring consistent format for comparison
+     */
+    private normalizeBlockId(blockId: string): string {
+        // Remove the caret if present
+        return blockId.replace(/^\^/, '').trim();
     }
     
     /**
@@ -516,6 +599,74 @@ export default class Tasks implements Readable<TaskStore> {
                 }, 2000);
             }
         }
+    }
+
+    /**
+     * Ensure tasks are loaded for the current file and then perform an action with them
+     * This helps avoid race conditions where tasks aren't loaded when needed
+     */
+    public ensureTasksLoaded(callback: (tasks: TaskItem[]) => void): void {
+        const file = this.plugin.tracker?.file;
+        if (!file) {
+            console.warn('Cannot ensure tasks are loaded: No active file in tracker');
+            return;
+        }
+
+        // If we already have tasks for this file, use them
+        if (this.state.list && this.state.list.length > 0) {
+            console.log(`Using ${this.state.list.length} already loaded tasks`);
+            callback(this.state.list);
+            return;
+        }
+
+        // Otherwise, load tasks from Dataview first
+        console.log('No tasks loaded, fetching from Dataview...');
+        this.getTasksFromDataview(file).then(tasks => {
+            if (tasks && tasks.length > 0) {
+                console.log(`Loaded ${tasks.length} tasks from Dataview`);
+                // Update the store
+                this._store.update(state => ({ ...state, list: tasks }));
+                // Call the callback with the loaded tasks
+                callback(tasks);
+            } else {
+                console.warn('Failed to load tasks from Dataview, trying direct file parsing');
+                // As a fallback, try parsing the file directly
+                this.plugin.app.vault.cachedRead(file).then(content => {
+                    const cache = this.plugin.app.metadataCache.getFileCache(file);
+                    const parsedTasks = resolveTasks(
+                        this.plugin.getSettings().taskFormat,
+                        file,
+                        content,
+                        cache
+                    );
+                    
+                    if (parsedTasks && parsedTasks.length > 0) {
+                        console.log(`Parsed ${parsedTasks.length} tasks from file`);
+                        // Update the store
+                        this._store.update(state => ({ ...state, list: parsedTasks }));
+                        // Call the callback with the parsed tasks
+                        callback(parsedTasks);
+                    } else {
+                        console.error('Failed to load any tasks through all available methods');
+                    }
+                }).catch(error => {
+                    console.error('Error parsing file for tasks:', error);
+                });
+            }
+        }).catch(error => {
+            console.error('Error loading tasks from Dataview:', error);
+        });
+    }
+
+    /**
+     * Public method to update the pomodoro count for the active task
+     * This can be called from the Timer component when a pomodoro completes
+     */
+    public updateActiveTaskPomodoroCount(): void {
+        // First ensure tasks are loaded before attempting to update
+        this.ensureTasksLoaded(tasks => {
+            this.syncActiveTask(tasks);
+        });
     }
 }
 

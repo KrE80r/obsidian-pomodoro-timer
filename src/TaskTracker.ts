@@ -231,7 +231,7 @@ export default class TaskTracker implements TaskTrackerStore {
         
         // Normalize the blockLink - remove caret if present in the search parameter
         const normalizedSearchBlockLink = blockLink.replace(/^\^/, '').trim();
-        console.log('DEBUG: Looking for block link:', blockLink);
+        console.log('DEBUG: Looking for block link:', blockLink, 'normalized:', normalizedSearchBlockLink);
 
         let foundMatch = false;
         let lineToUpdate = -1;
@@ -242,121 +242,92 @@ export default class TaskTracker implements TaskTrackerStore {
                 let originalLine = lines[lineNr];
                 let line = originalLine;
                 
+                // First try to match by blockLink
+                if (line.includes(`^${normalizedSearchBlockLink}`)) {
+                    console.log('DEBUG: Found task by exact block ID match:', line);
+                    foundMatch = true;
+                    lineToUpdate = lineNr;
+                    break;
+                }
+                
+                // Then try to extract and compare components
                 const components = extractTaskComponents(line)
-
                 if (!components) {
                     continue
                 }
                 
-                // Normalize the component blockLink for comparison
-                const componentBlockLink = components.blockLink.trim().replace(/^\^/, '');
-                
-                // Compare the normalized block links
-                const isMatch = componentBlockLink === normalizedSearchBlockLink;
-                
-                if (isMatch) {
+                // Check if the blockLink matches (normalized to handle different formats)
+                const componentBlockId = components.blockLink?.replace(/^\^/, '').trim();
+                if (componentBlockId && componentBlockId === normalizedSearchBlockLink) {
+                    console.log('DEBUG: Found task by component block ID match:', componentBlockId);
                     foundMatch = true;
                     lineToUpdate = lineNr;
-                    console.log('DEBUG: Found matching block link!');
-
-                    // First check if we have a bracketed pomodoro count
-                    const hasPomodoroCount = components.body.includes('[🍅::');
-                    
-                    if (hasPomodoroCount) {
-                        try {
-                            // Find the starting position of the pomodoro count
-                            const startPos = line.indexOf('[🍅::');
-                            if (startPos !== -1) {
-                                // Find the ending position (closing bracket)
-                                const endPos = line.indexOf(']', startPos);
-                                if (endPos !== -1) {
-                                    // Extract the pomodoro text
-                                    const pomodoroText = line.substring(startPos, endPos + 1);
-                                    
-                                    // Parse the count number
-                                    const countMatch = pomodoroText.match(/\[🍅::\s*(\d+)(?:\/(\d+))?\s*\]/);
-                                    if (countMatch) {
-                                        const currentCount = parseInt(countMatch[1] || '0');
-                                        
-                                        // Create the new pomodoro text
-                                        let newPomodoroText = `[🍅:: ${currentCount + 1}`;
-                                        if (countMatch[2]) {
-                                            newPomodoroText += `/${countMatch[2]}`;
-                                        }
-                                        newPomodoroText += `]`;
-                                        
-                                        // Build the new line by replacing just the pomodoro part
-                                        const newLine = line.substring(0, startPos) + 
-                                                        newPomodoroText + 
-                                                        line.substring(endPos + 1);
-                                        
-                                        // Verify the replacement worked
-                                        if (newLine !== line) {
-                                            line = newLine;
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (error) {
-                            console.log('DEBUG: Error processing pomodoro count:', error);
-                        }
-                    } else {
-                        // Add a new pomodoro count before the block ID
-                        if (components.blockLink) {
-                            const blockPos = line.indexOf(components.blockLink);
-                            if (blockPos !== -1) {
-                                line = line.substring(0, blockPos) + 
-                                      ` [🍅:: 1]` + 
-                                      line.substring(blockPos);
-                            } else {
-                                // Fallback - add at the end
-                                line = line + ` [🍅:: 1]`;
-                            }
-                        } else {
-                            // No block ID, add at the end
-                            line = line + ` [🍅:: 1]`;
-                        }
-                    }
-                    
-                    if (line !== originalLine) {
-                        lines[lineNr] = line;
-                    } else {
-                        foundMatch = false; // Don't trigger file update if no changes
-                    }
                     break;
                 }
             }
         }
-        
-        // Only update the file if we found a match and made changes
+
         if (foundMatch && lineToUpdate >= 0) {
-            // Update the file content
-            await this.plugin.app.vault.modify(file, lines.join('\n'));
+            console.log('DEBUG: Found task to update at line:', lineToUpdate);
+            const originalLine = lines[lineToUpdate];
             
-            console.log('DEBUG: Successfully updated the file!');
+            // Use multiple patterns to detect existing pomodoro count
+            const pomodoroPatterns = [
+                /\[🍅::\s*(\d+)\]/,      // Standard format [🍅:: 3]
+                /🍅\s*(\d+)/,            // Simple format 🍅 3
+                /\[\s*🍅\s*:\s*(\d+)\s*\]/  // Alternative format [🍅: 3]
+            ];
             
-            // Simplified task refresh approach
-            try {
-                // Force Dataview to reindex this file
-                const dataviewPlugin = this.plugin.app.plugins.plugins?.dataview;
-                if (dataviewPlugin?.api) {
-                    const api = dataviewPlugin.api as any;
-                    if (api?.index?.touch) {
-                        api.index.touch(file.path);
-                    }
+            let updatedLine = originalLine;
+            let patternFound = false;
+            
+            for (const pattern of pomodoroPatterns) {
+                if (pattern.test(originalLine)) {
+                    // Update existing pomodoro count
+                    updatedLine = originalLine.replace(pattern, (match, count) => {
+                        const newCount = parseInt(count) + 1;
+                        // Keep the same format, just update the number
+                        if (match.includes('::')) {
+                            return `[🍅:: ${newCount}]`;
+                        } else if (match.includes(':')) {
+                            return `[🍅: ${newCount}]`;
+                        } else {
+                            return `🍅 ${newCount}`;
+                        }
+                    });
+                    patternFound = true;
+                    break;
                 }
-                
-                // Try direct tasks refresh
-                const pluginAny = this.plugin as any;
-                if (pluginAny.tasks && typeof pluginAny.tasks.loadFileTasks === 'function') {
-                    pluginAny.tasks.loadFileTasks(file);
-                }
-                
-                // Trigger a file refresh event
-                this.plugin.app.workspace.trigger('file-open', file, false);
-            } catch (e) {
-                console.log('DEBUG: Error during task refresh:', e);
             }
+            
+            // If no pomodoro count found, add it before any block ID or metadata
+            if (!patternFound) {
+                // Look for a block ID or other metadata to insert before
+                const metadataPattern = /(\s+(?:➕|📅|⏳|✅)\s+\d{4}-\d{2}-\d{2}|\s+#[\w\d/-]+|\s+\^[\w\d-]+)(?:\s|$)/;
+                const blockIdMatch = originalLine.match(metadataPattern);
+                
+                if (blockIdMatch && blockIdMatch.index !== undefined) {
+                    // Insert before the first metadata item
+                    updatedLine = 
+                        originalLine.substring(0, blockIdMatch.index) + 
+                        ` [🍅:: 1]` + 
+                        originalLine.substring(blockIdMatch.index);
+                } else {
+                    // Just append to the end
+                    updatedLine += ` [🍅:: 1]`;
+                }
+            }
+            
+            // Update the line in the file
+            if (updatedLine !== originalLine) {
+                lines[lineToUpdate] = updatedLine;
+                await this.plugin.app.vault.modify(file, lines.join('\n'));
+                console.log('DEBUG: Updated task with new pomodoro count:', updatedLine);
+            } else {
+                console.warn('DEBUG: Failed to update line - no changes made:', originalLine);
+            }
+        } else {
+            console.warn('DEBUG: Failed to find task with block link:', normalizedSearchBlockLink);
         }
     }
 }
