@@ -50,9 +50,8 @@ export default class TaskTracker implements TaskTrackerStore {
                 let file = this.plugin.app.workspace.getActiveFile()
                 if (!this.state.pinned) {
                     this.store.update((state) => {
-                        if (state.file?.path !== file?.path) {
-                            state.task = undefined
-                        }
+                        // Don't clear the task when changing files
+                        // Keep state.task as is to persist selection across files
                         state.file = file ?? state.file
                         return state
                     })
