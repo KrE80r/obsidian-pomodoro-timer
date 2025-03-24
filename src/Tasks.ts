@@ -104,7 +104,7 @@ export default class Tasks implements Readable<TaskStore> {
                 return;
             }
             
-            // Force reload tasks from Dataview
+            // Force reload tasks from Dataview only
             this.getTasksFromDataview(file).then(reloadedTasks => {
                 if (reloadedTasks && reloadedTasks.length > 0) {
                     console.log(`Successfully reloaded ${reloadedTasks.length} tasks from Dataview`);
@@ -113,29 +113,8 @@ export default class Tasks implements Readable<TaskStore> {
                     // Now try again with the reloaded tasks
                     this.syncActiveTaskWithTasks(reloadedTasks);
                 } else {
-                    console.warn('Failed to reload tasks from Dataview, trying direct file parsing');
-                    // As a last resort, try parsing tasks directly from the file
-                    this.plugin.app.vault.cachedRead(file).then(content => {
-                        const cache = this.plugin.app.metadataCache.getFileCache(file);
-                        const parsedTasks = resolveTasks(
-                            this.plugin.getSettings().taskFormat,
-                            file,
-                            content,
-                            cache
-                        );
-                        
-                        if (parsedTasks && parsedTasks.length > 0) {
-                            console.log(`Successfully parsed ${parsedTasks.length} tasks from file`);
-                            // Update the task store
-                            this._store.update(state => ({ ...state, list: parsedTasks }));
-                            // Try syncing again with parsed tasks
-                            this.syncActiveTaskWithTasks(parsedTasks);
-                        } else {
-                            console.error('Failed to load any tasks, cannot update pomodoro count');
-                        }
-                    }).catch(error => {
-                        console.error('Error parsing file for tasks:', error);
-                    });
+                    console.warn('Failed to load tasks from Dataview. Cannot update pomodoro count.');
+                    // Do not fall back to file parsing
                 }
             }).catch(error => {
                 console.error('Error reloading tasks from Dataview:', error);
@@ -451,6 +430,13 @@ export default class Tasks implements Readable<TaskStore> {
     }
 
     private getTasksFromFile(file: TFile, content: string): TaskItem[] {
+        // This method should never be called as per user requirements
+        console.error('getTasksFromFile called, which violates user settings to only use Dataview!');
+        throw new Error('Task loading from file parsing is disabled. Only Dataview queries are allowed.');
+        
+        // The code below will never execute due to the throw statement above
+        // Keeping as reference in case functionality needs to be restored
+        /* 
         console.log('Using default task parsing');
         return resolveTasks(
             this.plugin.getSettings().taskFormat,
@@ -458,6 +444,7 @@ export default class Tasks implements Readable<TaskStore> {
             content,
             this.plugin.app.metadataCache.getFileCache(file),
         );
+        */
     }
 
     private convertToTaskItem(task: DataviewTask, file: TFile): TaskItem {
@@ -629,32 +616,19 @@ export default class Tasks implements Readable<TaskStore> {
                 // Call the callback with the loaded tasks
                 callback(tasks);
             } else {
-                console.warn('Failed to load tasks from Dataview, trying direct file parsing');
-                // As a fallback, try parsing the file directly
-                this.plugin.app.vault.cachedRead(file).then(content => {
-                    const cache = this.plugin.app.metadataCache.getFileCache(file);
-                    const parsedTasks = resolveTasks(
-                        this.plugin.getSettings().taskFormat,
-                        file,
-                        content,
-                        cache
-                    );
-                    
-                    if (parsedTasks && parsedTasks.length > 0) {
-                        console.log(`Parsed ${parsedTasks.length} tasks from file`);
-                        // Update the store
-                        this._store.update(state => ({ ...state, list: parsedTasks }));
-                        // Call the callback with the parsed tasks
-                        callback(parsedTasks);
-                    } else {
-                        console.error('Failed to load any tasks through all available methods');
-                    }
-                }).catch(error => {
-                    console.error('Error parsing file for tasks:', error);
-                });
+                // Do not fall back to file parsing
+                console.warn('Failed to load tasks from Dataview. Please check your Dataview query settings.');
+                // Update store with empty list
+                this._store.update(state => ({ ...state, list: [] }));
+                // Call callback with empty list
+                callback([]);
             }
         }).catch(error => {
             console.error('Error loading tasks from Dataview:', error);
+            // Update store with empty list
+            this._store.update(state => ({ ...state, list: [] }));
+            // Call callback with empty list
+            callback([]);
         });
     }
 

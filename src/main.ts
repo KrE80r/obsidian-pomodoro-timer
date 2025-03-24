@@ -23,6 +23,23 @@ export default class PomodoroTimerPlugin extends Plugin {
         this.timer = new Timer(this)
         this.tasks = new Tasks(this)
 
+        // Create a variable to track if tasks should be loaded automatically or manually
+        let autoLoadTasks = false;
+        
+        // Register to the tracker store to detect file changes
+        // but do NOT automatically load tasks when file changes
+        this.registerEvent(
+            this.tracker.subscribe((state) => {
+                // Only load tasks on initial startup, not on file changes
+                if (autoLoadTasks) {
+                    autoLoadTasks = false; // Reset so it doesn't auto-load on future changes
+                    this.loadTasks();
+                }
+                // Otherwise, do nothing when the file changes - tasks will only
+                // be reloaded when the user clicks the reload button
+            })
+        );
+
         this.registerView(VIEW_TYPE_TIMER, (leaf) => new TimerView(this, leaf))
 
         // ribbon
@@ -92,9 +109,8 @@ export default class PomodoroTimerPlugin extends Plugin {
             },
         })
         
-        // Initial load of tasks
-        // This will now only use Dataview, never falling back to file parsing
-        this.loadTasks();
+        // Set flag to allow one-time initial load of tasks
+        autoLoadTasks = true;
     }
 
     public getSettings(): Settings {
