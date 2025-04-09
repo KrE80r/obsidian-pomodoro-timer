@@ -13,8 +13,7 @@ export let render: (content: string, el: HTMLElement) => void
 let extra: 'settings' | 'tasks' | 'close' = 'tasks'
 const offset = 440
 
-$: strokeOffset = $timer.remained.millis / $timer.count * offset
-
+$: strokeOffset = ($timer.remained.millis / $timer.count) * offset
 
 const start = () => {
     if (!$timer.running) {
@@ -47,6 +46,10 @@ const toggleExtra = (value: 'settings' | 'tasks') => {
     }
     extra = value
 }
+
+const endEarly = () => {
+    timer.endEarly()
+}
 </script>
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -55,10 +58,7 @@ const toggleExtra = (value: 'settings' | 'tasks') => {
     <div class="main">
         <div class="timer">
             <div class="timer-display">
-                <div
-                    class="status control"
-                    on:click={toggleMode}
-                >
+                <div class="status control" on:click={toggleMode}>
                     {#if $timer.running}<span class="breath"></span>{/if}
                     {#if $timer.mode === 'WORK'}
                         <span class="mode">Work</span>
@@ -77,8 +77,7 @@ const toggleExtra = (value: 'settings' | 'tasks') => {
                 class="timer"
                 width="160"
                 height="160"
-                xmlns="http://www.w3.org/2000/svg"
-            >
+                xmlns="http://www.w3.org/2000/svg">
                 <g>
                     <circle
                         class="circle_timer"
@@ -86,8 +85,7 @@ const toggleExtra = (value: 'settings' | 'tasks') => {
                         cy="81"
                         cx="81"
                         stroke-width="2"
-                        fill="none"
-                    />
+                        fill="none" />
                     <circle
                         class="circle_animation"
                         r="69.85699"
@@ -95,8 +93,7 @@ const toggleExtra = (value: 'settings' | 'tasks') => {
                         cx="81"
                         stroke-width="8"
                         fill="none"
-                        style="stroke-dashoffset: {strokeOffset}"
-                    />
+                        style="stroke-dashoffset: {strokeOffset}" />
                 </g>
             </svg>
         </div>
@@ -105,8 +102,7 @@ const toggleExtra = (value: 'settings' | 'tasks') => {
                 on:click={() => {
                     toggleExtra('tasks')
                 }}
-                class="control"
-            >
+                class="control">
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="16"
@@ -119,11 +115,8 @@ const toggleExtra = (value: 'settings' | 'tasks') => {
                     stroke-linejoin="round"
                     class="lucide lucide-list-todo"
                     ><rect x="3" y="5" width="6" height="6" rx="1" /><path
-                        d="m3 17 2 2 4-4"
-                    /><path d="M13 6h8" /><path d="M13 12h8" /><path
-                        d="M13 18h8"
-                    /></svg
-                >
+                        d="m3 17 2 2 4-4" /><path d="M13 6h8" /><path
+                        d="M13 12h8" /><path d="M13 18h8" /></svg>
             </span>
 
             {#if !$timer.running}
@@ -139,10 +132,9 @@ const toggleExtra = (value: 'settings' | 'tasks') => {
                         stroke-linecap="round"
                         stroke-linejoin="round"
                         class="lucide lucide-play"
-                        ><polygon points="5 3 19 12 5 21 5 3" /></svg
-                    >
+                        ><polygon points="5 3 19 12 5 21 5 3" /></svg>
                 </span>
-            {:else}
+
                 <span on:click={pause} class="control">
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -159,9 +151,31 @@ const toggleExtra = (value: 'settings' | 'tasks') => {
                             width="4"
                             height="16"
                             x="14"
-                            y="4"
-                        /></svg
-                    >
+                            y="4" /></svg>
+                </span>
+            {:else}
+                <span
+                    on:click={endEarly}
+                    class="control"
+                    title="End session early">
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="lucide lucide-square"
+                        ><rect
+                            width="18"
+                            height="18"
+                            x="3"
+                            y="3"
+                            rx="2"
+                            ry="2" /></svg>
                 </span>
             {/if}
             <span on:click={reset} class="control">
@@ -177,16 +191,14 @@ const toggleExtra = (value: 'settings' | 'tasks') => {
                     stroke-linejoin="round"
                     class="lucide lucide-rotate-ccw"
                     ><path
-                        d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"
-                    /><path d="M3 3v5h5" /></svg
-                >
+                        d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path
+                        d="M3 3v5h5" /></svg>
             </span>
             <span
                 on:click={() => {
                     toggleExtra('settings')
                 }}
-                class="control"
-            >
+                class="control">
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="16"
@@ -201,9 +213,7 @@ const toggleExtra = (value: 'settings' | 'tasks') => {
                     ><path d="M20 7h-9" /><path d="M14 17H5" /><circle
                         cx="17"
                         cy="17"
-                        r="3"
-                    /><circle cx="7" cy="7" r="3" /></svg
-                >
+                        r="3" /><circle cx="7" cy="7" r="3" /></svg>
             </span>
         </div>
     </div>

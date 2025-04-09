@@ -383,6 +383,55 @@ export default class Timer implements Readable<TimerStore> {
         }
     }
 
+    public async endEarly() {
+        // Only proceed if we're in a session
+        if (!this.state.inSession) {
+            return;
+        }
+
+        // Calculate actual elapsed time for the log
+        const actualElapsed = this.state.elapsed;
+        const actualDuration = Math.floor(actualElapsed / (60 * 1000)); // Convert to minutes
+
+        // Create a log context with actual elapsed time and make it "finished"
+        // by setting count = elapsed so the finished check in Logger.createLog passes
+        const logContext = this.createLogContext({
+            ...this.state,
+            elapsed: actualElapsed,
+            count: actualElapsed, // This makes it "finished" since count = elapsed
+            duration: actualDuration
+        });
+
+        // Log the session with actual duration
+        await this.processLog(logContext);
+
+        // Update the state to end the session
+        this.update((state) => {
+            // Use the same session end logic as natural completion
+            if (state.breakLen == 0) {
+                state.mode = 'WORK';
+            } else {
+                state.mode = state.mode == 'WORK' ? 'BREAK' : 'WORK';
+            }
+            
+            this.saveCurrentMode(state.mode);
+            
+            // Reset timer state
+            state.duration = state.mode == 'WORK' ? state.workLen : state.breakLen;
+            state.count = state.duration * 60 * 1000;
+            state.inSession = false;
+            state.running = false;
+            this.clock.postMessage({
+                start: false,
+                lowFps: this.plugin.getSettings().lowFps,
+            });
+            state.startTime = null;
+            state.elapsed = 0;
+            
+            return state;
+        });
+    }
+
     // Add a method to save the current mode
     private saveCurrentMode(mode: Mode) {
         // Save to localStorage for persistence within the current session
