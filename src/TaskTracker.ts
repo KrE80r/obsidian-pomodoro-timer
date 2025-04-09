@@ -44,27 +44,13 @@ export default class TaskTracker implements TaskTrackerStore {
             }),
         )
 
-        plugin.registerEvent(
-            //loadtasks on file change
-            plugin.app.workspace.on('active-leaf-change', () => {
-                let file = this.plugin.app.workspace.getActiveFile()
-                if (!this.state.pinned) {
-                    this.store.update((state) => {
-                        // Don't clear the task when changing files
-                        // Keep state.task as is to persist selection across files
-                        state.file = file ?? state.file
-                        return state
-                    })
-                }
-            }),
-        )
+        // Remove the automatic file tracking - we don't want to associate with active file
+        // User will manually select tasks from the task list loaded by dataview query
 
+        // Initialize with no specific file attachment
         plugin.app.workspace.onLayoutReady(() => {
-            let file = this.plugin.app.workspace.getActiveFile()
-            this.store.update((state) => {
-                state.file = file ?? state.file
-                return state
-            })
+            // Don't automatically set the active file
+            // Let the user explicitly choose tasks from the loaded task list
         })
     }
 

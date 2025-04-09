@@ -23,20 +23,21 @@ export default class PomodoroTimerPlugin extends Plugin {
         this.timer = new Timer(this)
         this.tasks = new Tasks(this)
 
-        // Create a variable to track if tasks should be loaded automatically or manually
-        let autoLoadTasks = false;
+        // Create a variable to track if tasks should be loaded automatically
+        let autoLoadTasks = true;
         
-        // Register to the tracker store to detect file changes
-        // but do NOT automatically load tasks when file changes
+        // Register to the tracker store but don't react to file changes
         this.registerEvent(
             this.tracker.subscribe((state) => {
-                // Only load tasks on initial startup, not on file changes
+                // Only load tasks on initial startup
                 if (autoLoadTasks) {
                     autoLoadTasks = false; // Reset so it doesn't auto-load on future changes
-                    this.loadTasks();
+                    // Load tasks from dataview query regardless of active file
+                    if (this.tasks) {
+                        this.tasks.reloadTasks();
+                    }
                 }
-                // Otherwise, do nothing when the file changes - tasks will only
-                // be reloaded when the user clicks the reload button
+                // Otherwise, do nothing when the file changes
             })
         );
 
@@ -108,9 +109,6 @@ export default class PomodoroTimerPlugin extends Plugin {
                 this.loadTasks();
             },
         })
-        
-        // Set flag to allow one-time initial load of tasks
-        autoLoadTasks = true;
     }
 
     public getSettings(): Settings {
@@ -145,9 +143,9 @@ export default class PomodoroTimerPlugin extends Plugin {
     }
 
     public loadTasks() {
-        const file = this.app.workspace.getActiveFile();
-        if (file && this.tasks) {
-            this.tasks.loadFileTasks(file);
+        // Load tasks using dataview query regardless of active file
+        if (this.tasks) {
+            this.tasks.reloadTasks();
         }
     }
 }

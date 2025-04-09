@@ -194,10 +194,7 @@ export default class Timer implements Readable<TimerStore> {
 
     private async processLog(ctx: LogContext) {
         if (ctx.mode == 'WORK') {
-            // First try the traditional updateActual method
-            await this.plugin.tracker?.updateActual();
-            
-            // Then also try our more robust method for handling edge cases
+            // Use the robust method for handling task updates regardless of active file
             if (this.plugin.tasks) {
                 console.log('Using robust task update method to increment pomodoro count');
                 this.plugin.tasks.updateActiveTaskPomodoroCount();

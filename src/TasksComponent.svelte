@@ -103,7 +103,7 @@ const progressText = (item: TaskItem) => {
 }
 
 const openFile = (e: MouseEvent) => {
-    tracker.openFile(e)
+    // No longer doing anything since we're not tied to a specific file
 }
 
 const showTaskMenu = (task: TaskItem) => (e: MouseEvent) => {
@@ -120,7 +120,7 @@ const showTaskMenu = (task: TaskItem) => (e: MouseEvent) => {
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 
-{#if $tracker.file}
+{#if true}
     <div class="pomodoro-tasks-wrapper">
         <div class="pomodoro-tasks-header">
             <div class="pomodoro-tasks-header-title">
@@ -138,7 +138,7 @@ const showTaskMenu = (task: TaskItem) => (e: MouseEvent) => {
                             stroke-linejoin="round"
                             class="lucide lucide-pin"
                             ><line x1="12" x2="12" y1="17" y2="22" /><path
-                                d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" /></svg>
+                                d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0-4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" /></svg>
                     {:else}
                         <svg
                             xmlns="http://www.w3.org/2000/svg"
@@ -160,8 +160,8 @@ const showTaskMenu = (task: TaskItem) => (e: MouseEvent) => {
                                 d="M15 9.34V6h1a2 2 0 0 0 0-4H7.89" /></svg>
                     {/if}
                 </span>
-                <span class="pomodoro-tasks-file-name" on:click={openFile}>
-                    {$tracker.file.name}
+                <span class="pomodoro-tasks-file-name">
+                    Tasks from Dataview
                 </span>
                 <span class="pomodoro-tasks-count">
                     {filtered.length} tasks

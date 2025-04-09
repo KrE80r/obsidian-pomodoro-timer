@@ -1,5 +1,5 @@
 import PomodoroTimerPlugin from 'main'
-import { type CachedMetadata, type TFile, type App } from 'obsidian'
+import { CachedMetadata, TFile, App } from 'obsidian'
 import { extractTaskComponents } from 'utils'
 import { writable, derived, type Readable, type Writable } from 'svelte/store'
 
@@ -71,24 +71,8 @@ export default class Tasks implements Readable<TaskStore> {
     }
 
     private setupFileChangeHandler() {
-        this.plugin.registerEvent(
-            this.plugin.app.metadataCache.on(
-                'changed',
-                (file: TFile, content: string, cache: CachedMetadata) => {
-                    if (file.extension !== 'md' || file !== this.plugin.tracker?.file) return;
-                    
-                    const tasks = resolveTasks(
-                        this.plugin.getSettings().taskFormat,
-                        file,
-                        content,
-                        cache,
-                    );
-                    
-                    this._store.update(state => ({ ...state, list: tasks }));
-                    this.syncActiveTask(tasks);
-                }
-            )
-        );
+        // We no longer need to respond to file changes
+        // Tasks are now driven only by dataview query
     }
 
     private syncActiveTask(tasks: TaskItem[]) {
@@ -513,78 +497,110 @@ export default class Tasks implements Readable<TaskStore> {
      * This method can be called from UI elements to refresh the task list
      */
     public async reloadTasks() {
-        console.log('Reloading tasks based on Dataview query...');
-        const file = this.plugin.tracker?.file;
-        
-        if (!file) {
-            console.warn('No active file to reload tasks from');
-            if (this.plugin.app?.workspace) {
-                const Notice = this.plugin.app.workspace.containerEl.createEl('div');
-                Notice.setText('No active file to reload tasks from');
-                Notice.addClass('notice');
-                setTimeout(() => {
-                    Notice.remove();
-                }, 2000);
-            }
-            return;
-        }
-        
-        // Check if Dataview plugin is available
-        const dataviewPlugin = this.plugin.app.plugins.plugins['dataview'] as any;
-        if (!dataviewPlugin?.api) {
-            console.warn('Dataview plugin not found but required for task queries');
-            if (this.plugin.app?.workspace) {
-                const Notice = this.plugin.app.workspace.containerEl.createEl('div');
-                Notice.setText('Dataview plugin required for task queries');
-                Notice.addClass('notice');
-                setTimeout(() => {
-                    Notice.remove();
-                }, 3000);
-            }
-            return;
-        }
-        
-        // Check if query is configured
-        const query = this.plugin.getSettings().taskQuery?.trim();
-        if (!query) {
-            console.warn('No Dataview query configured in settings');
-            if (this.plugin.app?.workspace) {
-                const Notice = this.plugin.app.workspace.containerEl.createEl('div');
-                Notice.setText('No Dataview query configured in settings');
-                Notice.addClass('notice');
-                setTimeout(() => {
-                    Notice.remove();
-                }, 3000);
-            }
-            return;
-        }
-        
-        // Clear current tasks first
-        this._store.update(() => ({ list: [] }));
-        
         try {
-            // Load tasks with dataview query only (no file parsing fallback)
-            await this.loadFileTasks(file);
+            console.log('Reloading tasks using Dataview query');
             
-            // Show a success notification
-            if (this.plugin.app?.workspace) {
-                const Notice = this.plugin.app.workspace.containerEl.createEl('div');
-                Notice.setText('Tasks reloaded successfully');
-                Notice.addClass('notice');
-                setTimeout(() => {
-                    Notice.remove();
-                }, 2000);
+            // Get tasks from dataview query, not tied to any specific file
+            const tasks = await this.getTasksFromDataviewQuery();
+            
+            if (tasks && tasks.length > 0) {
+                console.log(`Successfully loaded ${tasks.length} tasks from Dataview query`);
+                this._store.update(state => ({ ...state, list: tasks }));
+                return true;
+            } else {
+                console.warn('No tasks returned from Dataview query');
+                return false;
             }
         } catch (error) {
-            console.error('Failed to reload tasks:', error);
-            if (this.plugin.app?.workspace) {
-                const Notice = this.plugin.app.workspace.containerEl.createEl('div');
-                Notice.setText('Failed to reload tasks');
-                Notice.addClass('notice');
-                setTimeout(() => {
-                    Notice.remove();
-                }, 2000);
+            console.error('Error loading tasks:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Load tasks using dataview query from settings
+     * This completely replaces the file-based task loading
+     */
+    private async getTasksFromDataviewQuery(): Promise<TaskItem[] | null> {
+        const dataviewApi = this.plugin.app.plugins.plugins.dataview?.api;
+        if (!dataviewApi) {
+            console.warn('Dataview API not available');
+            return null;
+        }
+        
+        try {
+            console.log('Using Dataview query from settings');
+            const settings = this.plugin.getSettings();
+            
+            // Check if settings has taskQuery property
+            const taskQuery = settings.taskQuery;
+            if (!taskQuery || typeof taskQuery !== 'string' || !taskQuery.trim()) {
+                console.warn('No Dataview query specified in settings');
+                return null;
             }
+            
+            console.log('Executing Dataview query:', taskQuery);
+            const result = await dataviewApi.query(taskQuery);
+            
+            if (result?.successful) {
+                if (result.value.values && Array.isArray(result.value.values)) {
+                    console.log(`Found ${result.value.values.length} tasks`);
+                    
+                    // Convert Dataview tasks to our TaskItem format
+                    const tasks: TaskItem[] = [];
+                    
+                    for (const task of result.value.values) {
+                        // Prepare file information for the task item
+                        let file = null;
+                        if (task.path) {
+                            file = this.plugin.app.vault.getAbstractFileByPath(task.path);
+                        } else if (task.file?.path) {
+                            file = this.plugin.app.vault.getAbstractFileByPath(task.file.path);
+                        }
+                        
+                        if (file && file instanceof TFile) {
+                            const taskItem = this.convertToTaskItem(task, file);
+                            tasks.push(taskItem);
+                        } else {
+                            // Create a default task if file not found
+                            const emptyTask: TaskItem = {
+                                path: task.path || '',
+                                text: task.text || '',
+                                fileName: task.file?.name || '',
+                                name: task.text || '',
+                                status: task.status || '',
+                                blockLink: task.link?.subpath || '',
+                                checked: task.checked || false,
+                                done: task.done || '',
+                                due: task.due || '',
+                                created: task.created || '',
+                                cancelled: task.cancelled || '',
+                                scheduled: task.scheduled || '',
+                                start: task.start || '',
+                                description: task.text || '',
+                                priority: task.priority || '',
+                                recurrence: task.recurrence || '',
+                                expected: task.expected || 0,
+                                actual: task.actual || 0,
+                                tags: task.tags || [],
+                                line: task.line || -1,
+                            };
+                            tasks.push(emptyTask);
+                        }
+                    }
+                    
+                    return tasks;
+                } else {
+                    console.warn('Dataview query returned no results or unexpected format');
+                    return null;
+                }
+            } else {
+                console.warn('Dataview query failed:', result?.error);
+                return null;
+            }
+        } catch (error) {
+            console.error('Error executing Dataview query:', error);
+            return null;
         }
     }
 
