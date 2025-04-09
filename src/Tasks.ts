@@ -1,5 +1,6 @@
 import PomodoroTimerPlugin from 'main'
-import { CachedMetadata, TFile, App } from 'obsidian'
+import type { CachedMetadata } from 'obsidian'
+import { TFile, App } from 'obsidian'
 import { extractTaskComponents } from 'utils'
 import { writable, derived, type Readable, type Writable } from 'svelte/store'
 
@@ -522,9 +523,9 @@ export default class Tasks implements Readable<TaskStore> {
      * This completely replaces the file-based task loading
      */
     private async getTasksFromDataviewQuery(): Promise<TaskItem[] | null> {
-        const dataviewApi = this.plugin.app.plugins.plugins.dataview?.api;
+        const dataviewApi = (window as any).DataviewAPI as DataviewAPI;
         if (!dataviewApi) {
-            console.warn('Dataview API not available');
+            console.warn('Dataview API not found');
             return null;
         }
         
@@ -747,4 +748,15 @@ interface DataviewTask {
         subpath?: string;
     };
     header?: { subpath: string };
+}
+
+// Add interface for Dataview API
+interface DataviewAPI {
+    query(query: string): Promise<{
+        successful: boolean;
+        error?: string;
+        value: {
+            values: any[];
+        };
+    }>;
 }
