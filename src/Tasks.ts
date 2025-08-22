@@ -1,7 +1,7 @@
 import PomodoroTimerPlugin from 'main'
 import type { CachedMetadata } from 'obsidian'
 import { TFile, App } from 'obsidian'
-import { extractTaskComponents } from 'utils'
+import { extractTaskComponents, extractTaskDisplayText } from 'utils'
 import { writable, derived, type Readable, type Writable } from 'svelte/store'
 
 import type { TaskFormat } from 'Settings'
@@ -445,11 +445,22 @@ export default class Tasks implements Readable<TaskStore> {
         const blockIdMatch = task.text.match(/\s\^([\w\d-]+)(?:\s|$)/);
         const blockId = blockIdMatch ? blockIdMatch[1] : '';
         
-        console.log('DEBUG: Extracted block ID from Dataview task:', blockId);
-        console.log('DEBUG: Original task text:', task.text);
-
         // For display purposes only, not for storage
-        const displayText = task.text
+        // First extract display text from wiki links, then remove metadata
+        // Inline the wiki link extraction to avoid bundler issues
+        let displayTextWithoutWikiLinks = task.text;
+        if (task.text.includes('[[')) {
+            const wikiLinkRegex = /\[\[([^\]]+?)(?:\|([^\]]+?))?\]\]/g;
+            displayTextWithoutWikiLinks = task.text.replace(wikiLinkRegex, (match, path, display) => {
+                if (display) {
+                    return display;
+                }
+                const parts = path.split('/');
+                return parts[parts.length - 1];
+            });
+        }
+        
+        const displayText = displayTextWithoutWikiLinks
             .replace(/\s*\^[\w\d-]+(?:\s|$)/, ' ')  // Remove block ID from display only
             .replace(/\[🍅::\s*\d+(?:\/\d+)?\]/, '') // Remove pomodoro count from display
             .trim();
@@ -477,6 +488,7 @@ export default class Tasks implements Readable<TaskStore> {
             line: task.line || 0,
             heading: task.header?.subpath || '',
         };
+        
 
         return taskItem;
     }
@@ -564,11 +576,24 @@ export default class Tasks implements Readable<TaskStore> {
                             tasks.push(taskItem);
                         } else {
                             // Create a default task if file not found
+                            // Extract display text from wiki links for name and description
+                            let cleanedText = task.text || '';
+                            if (cleanedText.includes('[[')) {
+                                const wikiLinkRegex = /\[\[([^\]]+?)(?:\|([^\]]+?))?\]\]/g;
+                                cleanedText = cleanedText.replace(wikiLinkRegex, (match: string, path: string, display?: string) => {
+                                    if (display) {
+                                        return display;
+                                    }
+                                    const parts = path.split('/');
+                                    return parts[parts.length - 1];
+                                });
+                            }
+                            
                             const emptyTask: TaskItem = {
                                 path: task.path || '',
-                                text: task.text || '',
+                                text: task.text || '',  // Keep original text with wiki links
                                 fileName: task.file?.name || '',
-                                name: task.text || '',
+                                name: cleanedText,  // Use cleaned text
                                 status: task.status || '',
                                 blockLink: task.link?.subpath || '',
                                 checked: task.checked || false,
@@ -578,7 +603,7 @@ export default class Tasks implements Readable<TaskStore> {
                                 cancelled: task.cancelled || '',
                                 scheduled: task.scheduled || '',
                                 start: task.start || '',
-                                description: task.text || '',
+                                description: cleanedText,  // Use cleaned text
                                 priority: task.priority || '',
                                 recurrence: task.recurrence || '',
                                 expected: task.expected || 0,
@@ -586,6 +611,8 @@ export default class Tasks implements Readable<TaskStore> {
                                 tags: task.tags || [],
                                 line: task.line || -1,
                             };
+                            
+                            
                             tasks.push(emptyTask);
                         }
                     }
@@ -702,15 +729,28 @@ export function resolveTasks(
             let [actual, expected] = detail.pomodoros.split('/')
 
             const dateformat = 'YYYY-MM-DD'
+            // Inline wiki link extraction for name and description
+            let cleanedDescription = detail.description;
+            if (detail.description.includes('[[')) {
+                const wikiLinkRegex = /\[\[([^\]]+?)(?:\|([^\]]+?))?\]\]/g;
+                cleanedDescription = detail.description.replace(wikiLinkRegex, (match, path, display) => {
+                    if (display) {
+                        return display;
+                    }
+                    const parts = path.split('/');
+                    return parts[parts.length - 1];
+                });
+            }
+            
             let item: TaskItem = {
                 text: line,
                 path: file.path,
                 fileName: file.name,
-                name: detail.description,
+                name: cleanedDescription,
                 status: components.status,
                 blockLink: components.blockLink,
                 checked: rawElement.task != '' && rawElement.task != ' ',
-                description: detail.description,
+                description: cleanedDescription,
                 done: detail.doneDate?.format(dateformat) ?? '',
                 due: detail.dueDate?.format(dateformat) ?? '',
                 created: detail.createdDate?.format(dateformat) ?? '',

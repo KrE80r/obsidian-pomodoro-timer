@@ -155,10 +155,35 @@ export default class Logger {
             let begin = moment(log.begin)
             let end = moment(log.end)
             
-            // Get task name if available for WORK mode
-            const taskName = (log.mode === 'WORK' && log.task?.name) 
-                ? log.task.name.trim() 
-                : '';
+            // Get task name if available for WORK mode, extract display text from wiki links
+            // Inline the extraction logic to avoid module resolution issues
+            let taskName = '';
+            if (log.mode === 'WORK' && log.task) {
+                // Try name first, then description, then text
+                const rawTaskName = log.task.name || log.task.description || log.task.text || '';
+                
+                // Inline wiki link extraction to ensure it always works
+                if (rawTaskName) {
+                    // Check if the text contains wiki links
+                    if (!rawTaskName.includes('[[')) {
+                        taskName = rawTaskName.trim();
+                    } else {
+                        // Regex to match wiki links: [[path|display]] or [[path]]
+                        const wikiLinkRegex = /\[\[([^\]]+?)(?:\|([^\]]+?))?\]\]/g;
+                        
+                        // Replace all wiki links with their display text
+                        taskName = rawTaskName.replace(wikiLinkRegex, (match, path, display) => {
+                            // If there's a display text (after |), use it
+                            if (display) {
+                                return display;
+                            }
+                            // Otherwise, extract just the note name from the path
+                            const parts = path.split('/');
+                            return parts[parts.length - 1];
+                        }).trim();
+                    }
+                }
+            }
                 
             if (settings.logFormat === 'SIMPLE') {
                 // Format to match the screenshot style

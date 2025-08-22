@@ -132,6 +132,39 @@ export function extractHashtags(description: string): string[] {
     return description.match(HASH_TAGS_REG_EXP)?.map((tag) => tag.trim()) ?? []
 }
 
+/**
+ * Extracts display text from wiki-style links in a string.
+ * Handles both [[Note|Display Text]] and [[Note]] formats.
+ * Returns the original text if no wiki links are present.
+ * 
+ * Examples:
+ * - "[[Path/To/Note|Display Text]]" -> "Display Text"
+ * - "[[Note]]" -> "Note"
+ * - "Regular task text" -> "Regular task text"
+ * - "Do [[Project|Important Work]] today" -> "Do Important Work today"
+ */
+export function extractTaskDisplayText(text: string): string {
+    // Check if the text contains wiki links
+    if (!text.includes('[[')) {
+        return text;
+    }
+    
+    // Regex to match wiki links: [[path|display]] or [[path]]
+    const wikiLinkRegex = /\[\[([^\]]+?)(?:\|([^\]]+?))?\]\]/g;
+    
+    // Replace all wiki links with their display text
+    return text.replace(wikiLinkRegex, (match, path, display) => {
+        // If there's a display text (after |), use it
+        if (display) {
+            return display;
+        }
+        // Otherwise, extract just the note name from the path
+        // Get the last part of the path after the last /
+        const parts = path.split('/');
+        return parts[parts.length - 1];
+    });
+}
+
 export function extractTaskComponents(line: string): TaskComponents | null {
     // Check the line to see if it is a markdown task.
     const regexMatch = line.match(TaskRegularExpressions.taskRegex)
