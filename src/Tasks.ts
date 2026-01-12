@@ -540,24 +540,91 @@ export default class Tasks implements Readable<TaskStore> {
             console.warn('Dataview API not found');
             return null;
         }
-        
+
         try {
             console.log('Using Dataview query from settings');
             const settings = this.plugin.getSettings();
-            
+
             // Check if settings has taskQuery property
             const taskQuery = settings.taskQuery;
             if (!taskQuery || typeof taskQuery !== 'string' || !taskQuery.trim()) {
                 console.warn('No Dataview query specified in settings');
                 return null;
             }
-            
+
             console.log('Executing Dataview query:', taskQuery);
+
+            // Try using pages().file.tasks approach first (more reliable)
+            // This bypasses potential caching issues with dataviewApi.query()
+            let allTasks: any[] = [];
+            try {
+                // Extract folder paths from the query's FROM clause
+                const fromMatch = taskQuery.match(/FROM\s+(.+?)(?:\s+WHERE|\s*$)/is);
+                if (fromMatch) {
+                    const fromClause = fromMatch[1];
+                    // Parse folder paths (handles "folder1" OR "folder2" syntax)
+                    const folderPaths = fromClause.match(/"([^"]+)"/g)?.map(s => s.replace(/"/g, '')) || [];
+
+                    console.log('Extracting tasks from folders:', folderPaths);
+
+                    for (const folder of folderPaths) {
+                        const pages = (dataviewApi as any).pages(`"${folder}"`);
+                        if (pages && pages.values) {
+                            for (const page of pages.values) {
+                                if (page.file?.tasks) {
+                                    for (const task of page.file.tasks) {
+                                        // Apply basic filtering from WHERE clause
+                                        const isCompleted = task.completed || task.checked;
+                                        const status = task.status || '';
+                                        const text = task.text || '';
+                                        const sectionPath = task.section?.subpath || '';
+
+                                        // Check conditions from the query
+                                        const passesCompletedCheck = !isCompleted || status === '/';
+                                        const passesTextCheck = text.length > 0;
+                                        const passesSectionCheck =
+                                            sectionPath !== 'Recurring Morning' &&
+                                            sectionPath !== 'Recurring Evening';
+                                        const passesAdminCheck = !text.includes('Emails/Slack/Cases/Jira/Calendar/Dev/Admin') ||
+                                            (text.includes('Emails/Slack/Cases/Jira/Calendar/Dev/Admin') &&
+                                             text.includes(new Date().toISOString().split('T')[0]));
+
+                                        if (passesCompletedCheck && passesTextCheck && passesSectionCheck && passesAdminCheck) {
+                                            allTasks.push({
+                                                ...task,
+                                                path: page.file.path,
+                                                file: { path: page.file.path, name: page.file.name }
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (allTasks.length > 0) {
+                    console.log(`Found ${allTasks.length} tasks via pages() method`);
+                    const tasks: TaskItem[] = [];
+                    for (const task of allTasks) {
+                        let file = this.plugin.app.vault.getAbstractFileByPath(task.path || task.file?.path);
+                        if (file && file instanceof TFile) {
+                            const taskItem = this.convertToTaskItem(task, file);
+                            tasks.push(taskItem);
+                        }
+                    }
+                    return tasks;
+                }
+            } catch (pagesError) {
+                console.log('pages() method failed, falling back to query():', pagesError);
+            }
+
+            // Fallback to original query() method
             const result = await dataviewApi.query(taskQuery);
-            
+
             if (result?.successful) {
                 if (result.value.values && Array.isArray(result.value.values)) {
-                    console.log(`Found ${result.value.values.length} tasks`);
+                    console.log(`Found ${result.value.values.length} tasks via query() method`);
                     
                     // Convert Dataview tasks to our TaskItem format
                     const tasks: TaskItem[] = [];
