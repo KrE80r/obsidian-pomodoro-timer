@@ -568,11 +568,17 @@ export default class Tasks implements Readable<TaskStore> {
                     console.log('Extracting tasks from folders:', folderPaths);
 
                     for (const folder of folderPaths) {
+                        console.log('Querying folder:', folder);
                         const pages = (dataviewApi as any).pages(`"${folder}"`);
-                        if (pages && pages.values) {
-                            for (const page of pages.values) {
-                                if (page.file?.tasks) {
-                                    for (const task of page.file.tasks) {
+                        console.log('Pages result:', pages, 'length:', pages?.length);
+                        if (pages) {
+                            // Handle both array and DataArray formats
+                            const pageList = pages.values || pages.array?.() || (Array.isArray(pages) ? pages : []);
+                            console.log('Page list length:', pageList.length);
+                            for (const page of pageList) {
+                                const tasks = page.file?.tasks?.values || page.file?.tasks?.array?.() || page.file?.tasks || [];
+                                console.log('File:', page.file?.path, 'tasks count:', tasks.length);
+                                for (const task of tasks) {
                                         // Apply basic filtering from WHERE clause
                                         const isCompleted = task.completed || task.checked;
                                         const status = task.status || '';
@@ -596,7 +602,6 @@ export default class Tasks implements Readable<TaskStore> {
                                                 file: { path: page.file.path, name: page.file.name }
                                             });
                                         }
-                                    }
                                 }
                             }
                         }
