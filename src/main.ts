@@ -6,6 +6,9 @@ import Timer from 'Timer'
 import Tasks from 'Tasks'
 import TaskTracker from 'TaskTracker'
 import { StateFile } from './StateFile'
+import { AsanaTaskModal } from './AsanaTaskModal'
+import { IdleReminderModal } from './IdleReminderModal'
+import { exec } from 'child_process'
 
 export default class PomodoroTimerPlugin extends Plugin {
     private settingTab?: PomodoroSettings
@@ -44,7 +47,7 @@ export default class PomodoroTimerPlugin extends Plugin {
 
         this.registerView(VIEW_TYPE_TIMER, (leaf) => new TimerView(this, leaf))
 
-        // ribbon
+        // ribbon - timer panel toggle
         this.addRibbonIcon('timer', 'Toggle timer panel', () => {
             let { workspace } = this.app
             let leaves = workspace.getLeavesOfType(VIEW_TYPE_TIMER)
@@ -53,6 +56,11 @@ export default class PomodoroTimerPlugin extends Plugin {
             } else {
                 this.activateView()
             }
+        })
+
+        // ribbon - Asana task selector
+        this.addRibbonIcon('list', 'Select Asana task', () => {
+            new AsanaTaskModal(this).open()
         })
 
         // status bar
@@ -111,6 +119,24 @@ export default class PomodoroTimerPlugin extends Plugin {
             },
         })
 
+        // Add command to select Asana task and start timer
+        this.addCommand({
+            id: 'select-asana-task',
+            name: 'Select Asana task and start timer',
+            callback: () => {
+                new AsanaTaskModal(this).open()
+            },
+        })
+
+        // Debug command to manually trigger reminder check
+        this.addCommand({
+            id: 'check-idle-reminder',
+            name: 'Check idle reminder now',
+            callback: () => {
+                this.checkIdleReminder()
+            },
+        })
+
         // Add command to start timer for a task specified in the shared state file
         this.addCommand({
             id: 'start-timer-for-task',
@@ -120,12 +146,19 @@ export default class PomodoroTimerPlugin extends Plugin {
                 const state = stateFile.read();
 
                 if (state.task_text) {
+                    // Build full task name with customer and tag
+                    const fullTaskName = [
+                        state.customer,
+                        state.task_text,
+                        state.tag
+                    ].filter(Boolean).join(' ');
+
                     // Build a TaskItem from the state file data
                     const taskItem = {
-                        text: state.task_text,
+                        text: fullTaskName,
                         blockLink: state.task_id || '',
-                        name: state.task_text,
-                        description: state.task_text,
+                        name: fullTaskName,
+                        description: fullTaskName,
                         path: '',
                         fileName: '',
                         line: -1,
@@ -186,6 +219,92 @@ export default class PomodoroTimerPlugin extends Plugin {
                 }
             }
         })
+
+        // Idle reminder interval - check every 5 minutes
+        this.registerInterval(
+            window.setInterval(() => {
+                this.checkIdleReminder()
+            }, 5 * 60 * 1000) // 5 minutes
+        )
+
+        // Also check immediately after a short delay (let plugin fully load)
+        window.setTimeout(() => {
+            this.checkIdleReminder()
+        }, 3000) // 3 second delay after load
+    }
+
+    /**
+     * Check if user is in a video meeting by looking at window titles
+     * Uses wmctrl on Linux to check for Zoom/Teams/Meet windows
+     */
+    private async isInMeeting(): Promise<boolean> {
+        return new Promise((resolve) => {
+            const meetingPatterns = ['zoom', 'teams.microsoft.com', 'meet.google.com']
+
+            exec('wmctrl -l', { timeout: 1000 }, (error, stdout) => {
+                if (error) {
+                    // wmctrl not available or failed - assume not in meeting
+                    resolve(false)
+                    return
+                }
+
+                const windowsLower = stdout.toLowerCase()
+                for (const pattern of meetingPatterns) {
+                    if (windowsLower.includes(pattern)) {
+                        resolve(true)
+                        return
+                    }
+                }
+                resolve(false)
+            })
+        })
+    }
+
+    /**
+     * Check if we should show an idle reminder
+     * Shows reminder if: enabled, weekday, work hours, no timer running, not in meeting
+     */
+    private async checkIdleReminder() {
+        const settings = this.getSettings()
+
+        // Check if reminder is enabled
+        if (!settings.reminderEnabled) {
+            return
+        }
+
+        const now = new Date()
+        const day = now.getDay()
+        const hour = now.getHours()
+
+        // Check if weekday (Mon=1, Fri=5)
+        if (day === 0 || day === 6) {
+            return
+        }
+
+        // Check if within work hours
+        if (hour < settings.reminderStartHour || hour >= settings.reminderEndHour) {
+            return
+        }
+
+        // Check if timer is already running
+        let timerRunning = false
+        const unsub = this.timer?.subscribe((state) => {
+            timerRunning = state.inSession
+        })
+        if (unsub) unsub()
+
+        if (timerRunning) {
+            return
+        }
+
+        // Check if in a meeting - skip reminder if so
+        const inMeeting = await this.isInMeeting()
+        if (inMeeting) {
+            return
+        }
+
+        // Show big modal reminder - impossible to miss!
+        new IdleReminderModal(this).open()
     }
 
     public getSettings(): Settings {

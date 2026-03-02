@@ -33,6 +33,10 @@ export interface Settings {
     taskFormat: TaskFormat
     lowFps: boolean
     taskQuery: string
+    // Idle reminder settings
+    reminderEnabled: boolean
+    reminderStartHour: number
+    reminderEndHour: number
 }
 
 export default class PomodoroSettings extends PluginSettingTab {
@@ -56,6 +60,10 @@ export default class PomodoroSettings extends PluginSettingTab {
         lowFps: false,
         taskQuery: `TASK FROM "0-Daily notes"
 WHERE !completed`,
+        // Idle reminder defaults
+        reminderEnabled: true,
+        reminderStartHour: 9,
+        reminderEndHour: 18,
     }
 
     static settings: Writable<Settings> = writable(
@@ -234,6 +242,52 @@ WHERE !completed`,
                     this.updateSettings({ taskQuery: value })
                 })
             })
+
+        /* ========== Idle Reminder Settings ========== */
+
+        section.createEl('h3', {
+            text: 'Idle Reminder Settings'
+        })
+
+        // Reminder enabled toggle
+        new Setting(containerEl)
+            .setName('Enable Idle Reminder')
+            .setDesc('Show a reminder every 5 minutes during work hours if no timer is running.')
+            .addToggle((toggle) => {
+                toggle.setValue(this._settings.reminderEnabled)
+                toggle.onChange((value) => {
+                    this.updateSettings({ reminderEnabled: value }, true)
+                })
+            })
+
+        // Only show hour settings if reminder is enabled
+        if (this._settings.reminderEnabled) {
+            // Work hours start
+            new Setting(containerEl)
+                .setName('Work Hours Start')
+                .setDesc('Hour when reminders begin (24-hour format)')
+                .addSlider((slider) => {
+                    slider.setLimits(0, 23, 1)
+                    slider.setValue(this._settings.reminderStartHour)
+                    slider.onChange((value) => {
+                        this.updateSettings({ reminderStartHour: value })
+                    })
+                    slider.setDynamicTooltip()
+                })
+
+            // Work hours end
+            new Setting(containerEl)
+                .setName('Work Hours End')
+                .setDesc('Hour when reminders stop (24-hour format)')
+                .addSlider((slider) => {
+                    slider.setLimits(0, 23, 1)
+                    slider.setValue(this._settings.reminderEndHour)
+                    slider.onChange((value) => {
+                        this.updateSettings({ reminderEndHour: value })
+                    })
+                    slider.setDynamicTooltip()
+                })
+        }
 
         /* ========== Notification Settings ========== */
         
