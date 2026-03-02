@@ -138,6 +138,16 @@ export default class PomodoroTimerPlugin extends Plugin {
             },
         })
 
+        // Force show reminder (bypasses all checks - for testing)
+        this.addCommand({
+            id: 'force-show-reminder',
+            name: 'Force show idle reminder (skip all checks)',
+            callback: () => {
+                const reminderWindow = new IdleReminderWindow(this)
+                reminderWindow.show()
+            },
+        })
+
         // Add command to start timer for a task specified in the shared state file
         this.addCommand({
             id: 'start-timer-for-task',
