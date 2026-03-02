@@ -158,7 +158,7 @@ export class IdleReminderWindow {
             cursor: pointer;
             -webkit-app-region: no-drag;
         }
-        select:focus { outline: none; border-color: ${colors.interactive}; }
+        select:focus { outline: none; border-color: ${colors.textMuted}; }
         .buttons {
             display: flex;
             gap: 12px;
@@ -177,12 +177,12 @@ export class IdleReminderWindow {
         button:hover { opacity: 0.9; }
         button:active { transform: scale(0.98); }
         .start-btn {
-            background: ${colors.interactive};
+            background: #e74c3c;
             color: white;
             flex: 1;
         }
         .start-btn:hover {
-            background: ${colors.interactiveHover};
+            background: #c0392b;
         }
         .dismiss-btn {
             background: ${colors.bgSecondary};

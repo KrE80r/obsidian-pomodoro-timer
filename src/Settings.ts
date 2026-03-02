@@ -261,30 +261,34 @@ WHERE !completed`,
                 })
             })
 
-        // Work hours start (always show)
+        // Work hours start (dropdown)
         new Setting(containerEl)
             .setName('Work Hours Start')
-            .setDesc('Hour when reminders begin (24-hour format)')
-            .addSlider((slider) => {
-                slider.setLimits(0, 23, 1)
-                slider.setValue(this._settings.reminderStartHour ?? 9)
-                slider.onChange((value) => {
-                    this.updateSettings({ reminderStartHour: value })
+            .setDesc('Hour when reminders begin')
+            .addDropdown((dropdown) => {
+                for (let h = 0; h <= 23; h++) {
+                    const label = h.toString().padStart(2, '0') + ':00'
+                    dropdown.addOption(h.toString(), label)
+                }
+                dropdown.setValue((this._settings.reminderStartHour ?? 9).toString())
+                dropdown.onChange((value) => {
+                    this.updateSettings({ reminderStartHour: parseInt(value) })
                 })
-                slider.setDynamicTooltip()
             })
 
-        // Work hours end (always show)
+        // Work hours end (dropdown)
         new Setting(containerEl)
             .setName('Work Hours End')
-            .setDesc('Hour when reminders stop (24-hour format)')
-            .addSlider((slider) => {
-                slider.setLimits(0, 23, 1)
-                slider.setValue(this._settings.reminderEndHour ?? 18)
-                slider.onChange((value) => {
-                    this.updateSettings({ reminderEndHour: value })
+            .setDesc('Hour when reminders stop')
+            .addDropdown((dropdown) => {
+                for (let h = 0; h <= 23; h++) {
+                    const label = h.toString().padStart(2, '0') + ':00'
+                    dropdown.addOption(h.toString(), label)
+                }
+                dropdown.setValue((this._settings.reminderEndHour ?? 18).toString())
+                dropdown.onChange((value) => {
+                    this.updateSettings({ reminderEndHour: parseInt(value) })
                 })
-                slider.setDynamicTooltip()
             })
 
         /* ========== Notification Settings ========== */
