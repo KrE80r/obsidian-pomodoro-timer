@@ -92,7 +92,19 @@ export class AsanaTaskModal extends FuzzySuggestModal<AsanaTask> {
         // Activate the task in tracker
         await this.plugin.tracker?.active(taskItem)
 
-        // Start the timer
+        // Force WORK mode if currently in BREAK mode
+        let currentMode: string = 'WORK'
+        const unsub = this.plugin.timer?.subscribe((state) => {
+            currentMode = state.mode
+        })
+        if (unsub) unsub()
+
+        if (currentMode === 'BREAK') {
+            // Toggle to WORK mode first
+            this.plugin.timer?.toggleMode()
+        }
+
+        // Start the timer (now guaranteed to be in WORK mode)
         this.plugin.timer?.start()
 
         // Update the state file for external tools

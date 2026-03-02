@@ -52,11 +52,60 @@ export default class Logger {
         if (logFile) {
             const logText = await this.toText(log, logFile)
             if (logText) {
-                await this.plugin.app.vault.append(logFile, `\n${logText}`)
+                await this.insertUnderSection(logFile, logText, 'Pomodoro')
             }
         }
 
         return logFile
+    }
+
+    /**
+     * Insert text under a specific section heading, or append to end if not found
+     */
+    private async insertUnderSection(file: TFile, text: string, sectionName: string): Promise<void> {
+        const content = await this.plugin.app.vault.read(file)
+        const lines = content.split('\n')
+
+        // Find the section heading (## Pomodoro or # Pomodoro)
+        const sectionRegex = new RegExp(`^#{1,3}\\s+${sectionName}\\s*$`, 'i')
+        let sectionIndex = -1
+
+        for (let i = 0; i < lines.length; i++) {
+            if (sectionRegex.test(lines[i])) {
+                sectionIndex = i
+                break
+            }
+        }
+
+        if (sectionIndex === -1) {
+            // Section not found, just append to end
+            await this.plugin.app.vault.append(file, `\n${text}`)
+            return
+        }
+
+        // Find the end of the section (next heading or end of file)
+        let insertIndex = sectionIndex + 1
+
+        // Skip any blank lines right after the heading
+        while (insertIndex < lines.length && lines[insertIndex].trim() === '') {
+            insertIndex++
+        }
+
+        // Find where to insert (after existing content in section, before next heading)
+        let endOfSection = lines.length
+        for (let i = insertIndex; i < lines.length; i++) {
+            if (/^#{1,3}\s+/.test(lines[i])) {
+                // Found next heading
+                endOfSection = i
+                break
+            }
+        }
+
+        // Insert at the end of the section (just before the next heading or EOF)
+        // But after any existing pomodoro entries
+        lines.splice(endOfSection, 0, text)
+
+        await this.plugin.app.vault.modify(file, lines.join('\n'))
     }
 
     private async resolveLogFile(ctx: LogContext): Promise<TFile | void> {
