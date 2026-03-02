@@ -4,6 +4,8 @@
 
 import type PomodoroTimerPlugin from 'main'
 import { AsanaTaskLoader, type AsanaTask } from './AsanaTaskLoader'
+import { IdleReminderModal } from './IdleReminderModal'
+import { StateFile } from './StateFile'
 
 export class IdleReminderWindow {
     private plugin: PomodoroTimerPlugin
@@ -15,9 +17,30 @@ export class IdleReminderWindow {
 
     async show(): Promise<void> {
         try {
-            // Access Electron APIs
+            // Access Electron APIs - try multiple methods
             const electron = require('electron')
-            const remote = electron.remote || (require('@electron/remote') as any)
+
+            // Try to get remote module (deprecated but might still work)
+            let remote: any = null
+            try {
+                remote = electron.remote
+            } catch (e) {
+                console.log('electron.remote not available')
+            }
+
+            if (!remote) {
+                try {
+                    remote = require('@electron/remote')
+                } catch (e) {
+                    console.log('@electron/remote not available')
+                }
+            }
+
+            if (!remote || !remote.BrowserWindow) {
+                console.log('Electron remote not available, falling back to modal')
+                throw new Error('Electron remote not available')
+            }
+
             const { BrowserWindow, screen } = remote
 
             // Get cursor position to determine active monitor
@@ -85,7 +108,6 @@ export class IdleReminderWindow {
         } catch (error) {
             console.error('Failed to create idle reminder window:', error)
             // Fallback to regular modal if Electron APIs not available
-            const { IdleReminderModal } = require('./IdleReminderModal')
             new IdleReminderModal(this.plugin).open()
         }
     }
@@ -224,7 +246,6 @@ export class IdleReminderWindow {
     }
 
     private async startTask(task: AsanaTask): Promise<void> {
-        const { AsanaTaskModal } = require('./AsanaTaskModal')
         const fullTaskName = AsanaTaskLoader.formatLabel(task)
 
         // Build TaskItem
@@ -268,7 +289,6 @@ export class IdleReminderWindow {
         this.plugin.timer?.start()
 
         // Update state file
-        const { StateFile } = require('./StateFile')
         const stateFile = new StateFile()
         stateFile.write({
             active: true,
