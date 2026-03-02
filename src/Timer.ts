@@ -1,4 +1,5 @@
 import PomodoroTimerPlugin from 'main'
+import { StateFile } from 'StateFile'
 // @ts-ignore
 import Worker from 'clock.worker'
 import { writable, derived } from 'svelte/store'
@@ -319,6 +320,15 @@ export default class Timer implements Readable<TimerStore> {
             })
             state.startTime = null
             state.elapsed = 0
+
+            // Clear external state file
+            try {
+                const stateFile = new StateFile();
+                stateFile.update({ active: false });
+            } catch (e) {
+                console.error('Failed to clear state file:', e);
+            }
+
             return state
         })
     }
