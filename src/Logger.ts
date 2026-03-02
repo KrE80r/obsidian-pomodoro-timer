@@ -52,7 +52,7 @@ export default class Logger {
         if (logFile) {
             const logText = await this.toText(log, logFile)
             if (logText) {
-                await this.insertUnderSection(logFile, logText, 'Pomodoro')
+                await this.insertUnderSection(logFile, logText, 'Pomodoros')
             }
         }
 
@@ -66,7 +66,7 @@ export default class Logger {
         const content = await this.plugin.app.vault.read(file)
         const lines = content.split('\n')
 
-        // Find the section heading (## Pomodoro or # Pomodoro)
+        // Find the section heading (# Pomodoros, ## Pomodoros, or ### Pomodoros)
         const sectionRegex = new RegExp(`^#{1,3}\\s+${sectionName}\\s*$`, 'i')
         let sectionIndex = -1
 
@@ -83,27 +83,30 @@ export default class Logger {
             return
         }
 
-        // Find the end of the section (next heading or end of file)
+        // Find where section content ends (next heading, ---, or end of file)
         let insertIndex = sectionIndex + 1
 
-        // Skip any blank lines right after the heading
+        // Skip blank lines right after the heading
         while (insertIndex < lines.length && lines[insertIndex].trim() === '') {
             insertIndex++
         }
 
-        // Find where to insert (after existing content in section, before next heading)
-        let endOfSection = lines.length
+        // Find the last content line in this section (before next heading or ---)
+        let lastContentLine = insertIndex - 1
         for (let i = insertIndex; i < lines.length; i++) {
-            if (/^#{1,3}\s+/.test(lines[i])) {
-                // Found next heading
-                endOfSection = i
+            const line = lines[i]
+            // Stop at next heading or horizontal rule
+            if (/^#{1,3}\s+/.test(line) || /^---\s*$/.test(line)) {
                 break
+            }
+            // Track last non-empty line as content
+            if (line.trim() !== '') {
+                lastContentLine = i
             }
         }
 
-        // Insert at the end of the section (just before the next heading or EOF)
-        // But after any existing pomodoro entries
-        lines.splice(endOfSection, 0, text)
+        // Insert right after the last content line (or after heading if no content)
+        lines.splice(lastContentLine + 1, 0, text)
 
         await this.plugin.app.vault.modify(file, lines.join('\n'))
     }

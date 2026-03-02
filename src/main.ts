@@ -8,6 +8,7 @@ import TaskTracker from 'TaskTracker'
 import { StateFile } from './StateFile'
 import { AsanaTaskModal } from './AsanaTaskModal'
 import { IdleReminderModal } from './IdleReminderModal'
+import { IdleReminderWindow } from './IdleReminderWindow'
 import { exec } from 'child_process'
 
 export default class PomodoroTimerPlugin extends Plugin {
@@ -303,8 +304,10 @@ export default class PomodoroTimerPlugin extends Plugin {
             return
         }
 
-        // Show big modal reminder - impossible to miss!
-        new IdleReminderModal(this).open()
+        // Show native Electron popup on active monitor
+        // Falls back to Obsidian modal if Electron APIs unavailable
+        const reminderWindow = new IdleReminderWindow(this)
+        reminderWindow.show()
     }
 
     public getSettings(): Settings {
