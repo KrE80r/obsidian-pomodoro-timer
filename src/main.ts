@@ -5,6 +5,7 @@ import StatusBar from 'StatusBarComponent.svelte'
 import Timer from 'Timer'
 import Tasks from 'Tasks'
 import TaskTracker from 'TaskTracker'
+import { StateFile } from './StateFile'
 
 export default class PomodoroTimerPlugin extends Plugin {
     private settingTab?: PomodoroSettings
@@ -108,6 +109,82 @@ export default class PomodoroTimerPlugin extends Plugin {
             callback: () => {
                 this.loadTasks();
             },
+        })
+
+        // Add command to start timer for a task specified in the shared state file
+        this.addCommand({
+            id: 'start-timer-for-task',
+            name: 'Start timer for task from state file',
+            callback: async () => {
+                const stateFile = new StateFile();
+                const state = stateFile.read();
+
+                if (state.task_text) {
+                    // Build a TaskItem from the state file data
+                    const taskItem = {
+                        text: state.task_text,
+                        blockLink: state.task_id || '',
+                        name: state.task_text,
+                        description: state.task_text,
+                        path: '',
+                        fileName: '',
+                        line: -1,
+                        status: '',
+                        priority: '',
+                        tags: state.tag ? [state.tag] : [],
+                        actual: 0,
+                        expected: 0,
+                        checked: false,
+                        done: '',
+                        due: '',
+                        created: '',
+                        cancelled: '',
+                        scheduled: '',
+                        start: '',
+                        recurrence: '',
+                    };
+
+                    // Try to find a matching task from loaded tasks
+                    let foundTask = false;
+                    if (this.tasks) {
+                        const store = this.tasks;
+                        let currentTasks: any[] = [];
+                        const unsub = store.subscribe((s) => {
+                            currentTasks = s.list;
+                        });
+                        unsub();
+
+                        if (currentTasks.length > 0) {
+                            const match = currentTasks.find((t: any) =>
+                                (state.task_id && t.blockLink && t.blockLink.replace(/^\^/, '') === state.task_id.replace(/^\^/, '')) ||
+                                t.text.includes(state.task_text || '')
+                            );
+                            if (match) {
+                                await this.tracker?.active(match);
+                                foundTask = true;
+                            }
+                        }
+                    }
+
+                    // If no match found in loaded tasks, use the constructed task item
+                    if (!foundTask) {
+                        await this.tracker?.active(taskItem);
+                    }
+
+                    // Start the timer
+                    this.timer?.start();
+
+                    // Update the state file to mark timer as active
+                    stateFile.update({
+                        active: true,
+                        started_at: new Date().toISOString(),
+                    });
+
+                    new Notice(`Timer started: ${state.task_text}`);
+                } else {
+                    new Notice('No task specified in state file');
+                }
+            }
         })
     }
 
