@@ -250,44 +250,42 @@ WHERE !completed`,
         })
 
         // Reminder enabled toggle
+        const reminderEnabled = this._settings.reminderEnabled ?? true
         new Setting(containerEl)
             .setName('Enable Idle Reminder')
             .setDesc('Show a reminder every 5 minutes during work hours if no timer is running.')
             .addToggle((toggle) => {
-                toggle.setValue(this._settings.reminderEnabled)
+                toggle.setValue(reminderEnabled)
                 toggle.onChange((value) => {
                     this.updateSettings({ reminderEnabled: value }, true)
                 })
             })
 
-        // Only show hour settings if reminder is enabled
-        if (this._settings.reminderEnabled) {
-            // Work hours start
-            new Setting(containerEl)
-                .setName('Work Hours Start')
-                .setDesc('Hour when reminders begin (24-hour format)')
-                .addSlider((slider) => {
-                    slider.setLimits(0, 23, 1)
-                    slider.setValue(this._settings.reminderStartHour)
-                    slider.onChange((value) => {
-                        this.updateSettings({ reminderStartHour: value })
-                    })
-                    slider.setDynamicTooltip()
+        // Work hours start (always show)
+        new Setting(containerEl)
+            .setName('Work Hours Start')
+            .setDesc('Hour when reminders begin (24-hour format)')
+            .addSlider((slider) => {
+                slider.setLimits(0, 23, 1)
+                slider.setValue(this._settings.reminderStartHour ?? 9)
+                slider.onChange((value) => {
+                    this.updateSettings({ reminderStartHour: value })
                 })
+                slider.setDynamicTooltip()
+            })
 
-            // Work hours end
-            new Setting(containerEl)
-                .setName('Work Hours End')
-                .setDesc('Hour when reminders stop (24-hour format)')
-                .addSlider((slider) => {
-                    slider.setLimits(0, 23, 1)
-                    slider.setValue(this._settings.reminderEndHour)
-                    slider.onChange((value) => {
-                        this.updateSettings({ reminderEndHour: value })
-                    })
-                    slider.setDynamicTooltip()
+        // Work hours end (always show)
+        new Setting(containerEl)
+            .setName('Work Hours End')
+            .setDesc('Hour when reminders stop (24-hour format)')
+            .addSlider((slider) => {
+                slider.setLimits(0, 23, 1)
+                slider.setValue(this._settings.reminderEndHour ?? 18)
+                slider.onChange((value) => {
+                    this.updateSettings({ reminderEndHour: value })
                 })
-        }
+                slider.setDynamicTooltip()
+            })
 
         /* ========== Notification Settings ========== */
         
