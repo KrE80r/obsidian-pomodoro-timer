@@ -381,17 +381,32 @@ class IdleReminderPopup:
         self.quick_frame.bind('<Configure>', lambda e: self.quick_canvas.configure(scrollregion=self.quick_canvas.bbox('all')))
         self.quick_canvas.bind('<Configure>', lambda e: self.quick_canvas.itemconfig(self.quick_canvas_window, width=e.width))
 
-        # Mouse wheel scrolling for quick panel
-        self.quick_canvas.bind('<Button-4>', lambda e: self.quick_canvas.yview_scroll(-1, 'units'))
-        self.quick_canvas.bind('<Button-5>', lambda e: self.quick_canvas.yview_scroll(1, 'units'))
+        # Mouse wheel scrolling for quick panel - bind to all widgets
+        def quick_scroll_up(e):
+            self.quick_canvas.yview_scroll(-1, 'units')
+        def quick_scroll_down(e):
+            self.quick_canvas.yview_scroll(1, 'units')
+
+        # Bind to canvas and frame
+        for widget in [self.quick_canvas, self.quick_frame, quick_inner, quick_container]:
+            widget.bind('<Button-4>', quick_scroll_up)
+            widget.bind('<Button-5>', quick_scroll_down)
+
+        # Store scroll functions to bind to dynamically created widgets
+        self.quick_scroll_up = quick_scroll_up
+        self.quick_scroll_down = quick_scroll_down
 
         # Generic tasks section
         generic_label = tk.Label(self.quick_frame, text="Generic Tasks", font=('Inter', 10, 'bold'),
                                 bg=bg_card, fg=text_secondary)
         generic_label.pack(anchor='w', pady=(0, 8))
+        generic_label.bind('<Button-4>', quick_scroll_up)
+        generic_label.bind('<Button-5>', quick_scroll_down)
 
         generic_frame = tk.Frame(self.quick_frame, bg=bg_card)
         generic_frame.pack(fill=tk.X, pady=(0, 16))
+        generic_frame.bind('<Button-4>', quick_scroll_up)
+        generic_frame.bind('<Button-5>', quick_scroll_down)
 
         for task in self.quick_tasks_config.get('generic_tasks', []):
             self.create_quick_task_button(generic_frame, task, None)
@@ -400,10 +415,14 @@ class IdleReminderPopup:
         cust_label = tk.Label(self.quick_frame, text="Customer Quick Tasks", font=('Inter', 10, 'bold'),
                              bg=bg_card, fg=text_secondary)
         cust_label.pack(anchor='w', pady=(8, 8))
+        cust_label.bind('<Button-4>', quick_scroll_up)
+        cust_label.bind('<Button-5>', quick_scroll_down)
 
         # Customer selector row
         cust_row = tk.Frame(self.quick_frame, bg=bg_card)
         cust_row.pack(fill=tk.X, pady=(0, 8))
+        cust_row.bind('<Button-4>', quick_scroll_up)
+        cust_row.bind('<Button-5>', quick_scroll_down)
 
         customers = self.asana.get_customers() or list(CUSTOMER_COLORS.keys())
         self.customer_buttons = {}
@@ -414,15 +433,21 @@ class IdleReminderPopup:
                            padx=8, pady=4, bd=0,
                            command=lambda c=cust: self.select_customer(c))
             btn.pack(side=tk.LEFT, padx=(0, 6))
+            btn.bind('<Button-4>', quick_scroll_up)
+            btn.bind('<Button-5>', quick_scroll_down)
             self.customer_buttons[cust] = btn
 
         # Customer template buttons (shown after customer selected)
         self.cust_templates_frame = tk.Frame(self.quick_frame, bg=bg_card)
         self.cust_templates_frame.pack(fill=tk.X, pady=(0, 8))
+        self.cust_templates_frame.bind('<Button-4>', quick_scroll_up)
+        self.cust_templates_frame.bind('<Button-5>', quick_scroll_down)
 
         self.cust_hint = tk.Label(self.quick_frame, text="↑ Select a customer first",
                                  font=('Inter', 9), bg=bg_card, fg=text_muted)
         self.cust_hint.pack(anchor='w')
+        self.cust_hint.bind('<Button-4>', quick_scroll_up)
+        self.cust_hint.bind('<Button-5>', quick_scroll_down)
 
         # === TASK LIST PANEL ===
         self.tasks_panel = tk.Frame(self.content_frame, bg=bg_dark)
@@ -496,6 +521,11 @@ class IdleReminderPopup:
                        padx=12, pady=8, bd=0, anchor='w',
                        command=lambda: self.start_quick_task(text, customer))
         btn.pack(fill=tk.X, pady=2)
+
+        # Bind scroll events so scrolling works when hovering over buttons
+        if hasattr(self, 'quick_scroll_up'):
+            btn.bind('<Button-4>', self.quick_scroll_up)
+            btn.bind('<Button-5>', self.quick_scroll_down)
 
     def select_customer(self, customer):
         """Select a customer and show available templates"""
