@@ -27,6 +27,7 @@ CUSTOMER_COLORS = {
 TASKS_FILE = Path.home() / '.local/share/time-tracker/tasks.json'
 RESULT_FILE = Path.home() / '.local/share/time-tracker/popup-result.json'
 ASANA_CONFIG = Path.home() / 'obsidian/.obsidian/plugins/obsidian-asana-bridge/data.json'
+QUICK_TASKS_FILE = Path.home() / '.local/share/time-tracker/quick-tasks.json'
 
 class AsanaAPI:
     """Simple Asana API client - compatible with obsidian-asana-bridge"""
@@ -143,14 +144,17 @@ class IdleReminderPopup:
         self.filtered_tasks = self.tasks.copy()
         self.selected_task = None
         self.asana = AsanaAPI()
+        self.quick_tasks_config = self.load_quick_tasks()
+        self.show_quick_tasks = True  # Toggle between quick tasks and full task list
+        self.selected_customer = None  # For customer+template combinations
 
         # Create window
         self.root = tk.Tk()
         self.root.title("🍅 Focus Time")
         self.root.configure(bg='#0d1117')
 
-        # Window size - taller to fit buttons
-        width, height = 500, 550
+        # Window size - taller to fit tabs and quick tasks
+        width, height = 520, 620
 
         # Get screen dimensions where mouse is located
         mouse_x = self.root.winfo_pointerx()
@@ -240,6 +244,16 @@ class IdleReminderPopup:
         except:
             return []
 
+    def load_quick_tasks(self):
+        """Load quick-start task templates"""
+        if not QUICK_TASKS_FILE.exists():
+            return {'generic_tasks': [], 'customer_templates': []}
+        try:
+            with open(QUICK_TASKS_FILE) as f:
+                return json.load(f)
+        except:
+            return {'generic_tasks': [], 'customer_templates': []}
+
     def build_ui(self):
         """Build the UI - Modern dark theme"""
         # Colors
@@ -274,13 +288,39 @@ class IdleReminderPopup:
                                   font=('Inter', 11), bg=bg_dark, fg=text_secondary)
         subtitle_label.pack()
 
-        # Search row with New Task button
-        search_row = tk.Frame(main_frame, bg=bg_dark)
-        search_row.pack(fill=tk.X, pady=(0, 12))
+        # Tab buttons row
+        tab_row = tk.Frame(main_frame, bg=bg_dark)
+        tab_row.pack(fill=tk.X, pady=(0, 12))
 
-        # Search container with border effect
-        search_container = tk.Frame(search_row, bg=border_color, padx=1, pady=1)
-        search_container.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.quick_tab_btn = tk.Button(tab_row, text="⚡ Quick Start", font=('Inter', 10, 'bold'),
+                                       bg=accent_blue, fg='white', relief='flat', cursor='hand2',
+                                       padx=12, pady=6, bd=0,
+                                       command=lambda: self.switch_tab('quick'))
+        self.quick_tab_btn.pack(side=tk.LEFT)
+
+        self.tasks_tab_btn = tk.Button(tab_row, text="📋 My Tasks", font=('Inter', 10),
+                                       bg=bg_hover, fg=text_secondary, relief='flat', cursor='hand2',
+                                       padx=12, pady=6, bd=0,
+                                       command=lambda: self.switch_tab('tasks'))
+        self.tasks_tab_btn.pack(side=tk.LEFT, padx=(8, 0))
+
+        # New Task button on right
+        new_btn = tk.Button(tab_row, text="+ New", font=('Inter', 10, 'bold'),
+                           bg='#238636', fg='white', relief='flat', cursor='hand2',
+                           activebackground='#2ea043', activeforeground='white',
+                           padx=12, pady=6, bd=0,
+                           command=self.create_new_task)
+        new_btn.pack(side=tk.RIGHT)
+
+        # Store colors and references for tab switching
+        self.tab_colors = {'bg_card': bg_card, 'bg_hover': bg_hover, 'text_primary': text_primary,
+                           'text_secondary': text_secondary, 'accent_blue': accent_blue}
+
+        # Search row (only shown in tasks tab)
+        self.search_row = tk.Frame(main_frame, bg=bg_dark)
+
+        search_container = tk.Frame(self.search_row, bg=border_color, padx=1, pady=1)
+        search_container.pack(fill=tk.X)
 
         self.search_var = tk.StringVar()
         self.search_var.trace_add('write', self.on_search)
@@ -290,15 +330,6 @@ class IdleReminderPopup:
                                      insertbackground=text_primary, relief='flat',
                                      highlightthickness=0)
         self.search_entry.pack(fill=tk.X, ipady=10, ipadx=12)
-        self.search_entry.insert(0, '')
-
-        # New Task button
-        new_btn = tk.Button(search_row, text="+ New Task", font=('Inter', 11, 'bold'),
-                           bg=accent_blue, fg='white', relief='flat', cursor='hand2',
-                           activebackground='#4c9aed', activeforeground='white',
-                           padx=16, pady=10, bd=0,
-                           command=self.create_new_task)
-        new_btn.pack(side=tk.RIGHT, padx=(12, 0))
 
         # Bottom row - pack FIRST so it's never pushed off
         bottom_frame = tk.Frame(main_frame, bg=bg_dark)
@@ -317,40 +348,86 @@ class IdleReminderPopup:
                                command=self.dismiss)
         dismiss_btn.pack(side=tk.RIGHT)
 
-        # Task list container with border - pack AFTER bottom frame
-        list_container = tk.Frame(main_frame, bg=border_color, padx=1, pady=1)
+        # Content container - holds both quick tasks and task list panels
+        self.content_frame = tk.Frame(main_frame, bg=bg_dark)
+        self.content_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Store colors for task items
+        self.colors = {
+            'bg_card': bg_card, 'bg_hover': bg_hover, 'text_primary': text_primary,
+            'text_secondary': text_secondary, 'border_color': border_color,
+            'bg_dark': bg_dark, 'accent_blue': accent_blue
+        }
+
+        # === QUICK TASKS PANEL ===
+        self.quick_panel = tk.Frame(self.content_frame, bg=bg_dark)
+
+        # Generic tasks section
+        generic_label = tk.Label(self.quick_panel, text="Generic Tasks", font=('Inter', 10, 'bold'),
+                                bg=bg_dark, fg=text_secondary)
+        generic_label.pack(anchor='w', pady=(0, 8))
+
+        generic_frame = tk.Frame(self.quick_panel, bg=bg_dark)
+        generic_frame.pack(fill=tk.X, pady=(0, 16))
+
+        for task in self.quick_tasks_config.get('generic_tasks', []):
+            self.create_quick_task_button(generic_frame, task, None)
+
+        # Customer templates section
+        cust_label = tk.Label(self.quick_panel, text="Customer Quick Tasks", font=('Inter', 10, 'bold'),
+                             bg=bg_dark, fg=text_secondary)
+        cust_label.pack(anchor='w', pady=(0, 8))
+
+        # Customer selector row
+        cust_row = tk.Frame(self.quick_panel, bg=bg_dark)
+        cust_row.pack(fill=tk.X, pady=(0, 8))
+
+        customers = self.asana.get_customers() or list(CUSTOMER_COLORS.keys())
+        self.customer_buttons = {}
+        for cust in customers:
+            color = CUSTOMER_COLORS.get(cust, '#666')
+            btn = tk.Button(cust_row, text=cust, font=('Inter', 9, 'bold'),
+                           bg=color, fg='white', relief='flat', cursor='hand2',
+                           padx=8, pady=4, bd=0,
+                           command=lambda c=cust: self.select_customer(c))
+            btn.pack(side=tk.LEFT, padx=(0, 6))
+            self.customer_buttons[cust] = btn
+
+        # Customer template buttons (shown after customer selected)
+        self.cust_templates_frame = tk.Frame(self.quick_panel, bg=bg_dark)
+        self.cust_templates_frame.pack(fill=tk.X, pady=(0, 8))
+
+        self.cust_hint = tk.Label(self.quick_panel, text="↑ Select a customer first",
+                                 font=('Inter', 9), bg=bg_dark, fg=text_muted)
+        self.cust_hint.pack(anchor='w')
+
+        # === TASK LIST PANEL ===
+        self.tasks_panel = tk.Frame(self.content_frame, bg=bg_dark)
+
+        list_container = tk.Frame(self.tasks_panel, bg=border_color, padx=1, pady=1)
         list_container.pack(fill=tk.BOTH, expand=True)
 
-        list_inner = tk.Frame(list_container, bg=bg_card, height=260)
+        list_inner = tk.Frame(list_container, bg=bg_card, height=280)
         list_inner.pack(fill=tk.BOTH, expand=True)
         list_inner.pack_propagate(False)
 
-        # Canvas for task items
         self.canvas = tk.Canvas(list_inner, bg=bg_card, highlightthickness=0, bd=0)
         scrollbar = ttk.Scrollbar(list_inner, orient=tk.VERTICAL, command=self.canvas.yview)
         self.task_frame = tk.Frame(self.canvas, bg=bg_card)
 
         self.canvas.configure(yscrollcommand=scrollbar.set)
-
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=8, pady=8)
 
         self.canvas_window = self.canvas.create_window((0, 0), window=self.task_frame, anchor='nw')
-
         self.task_frame.bind('<Configure>', self.on_frame_configure)
         self.canvas.bind('<Configure>', self.on_canvas_configure)
 
-        # Mouse wheel scrolling
         self.canvas.bind_all('<Button-4>', lambda e: self.canvas.yview_scroll(-1, 'units'))
         self.canvas.bind_all('<Button-5>', lambda e: self.canvas.yview_scroll(1, 'units'))
 
-        # Store colors for task items
-        self.colors = {
-            'bg_card': bg_card, 'bg_hover': bg_hover, 'text_primary': text_primary,
-            'text_secondary': text_secondary, 'border_color': border_color
-        }
-
-        # Populate tasks
+        # Initialize: show quick tasks panel
+        self.quick_panel.pack(fill=tk.BOTH, expand=True)
         self.populate_tasks()
 
     def on_frame_configure(self, event):
@@ -358,6 +435,84 @@ class IdleReminderPopup:
 
     def on_canvas_configure(self, event):
         self.canvas.itemconfig(self.canvas_window, width=event.width)
+
+    def switch_tab(self, tab):
+        """Switch between quick tasks and full task list"""
+        bg_hover = self.colors.get('bg_hover', '#21262d')
+        text_secondary = self.colors.get('text_secondary', '#8b949e')
+        accent_blue = self.colors.get('accent_blue', '#58a6ff')
+
+        if tab == 'quick':
+            self.show_quick_tasks = True
+            self.quick_tab_btn.configure(bg=accent_blue, fg='white', font=('Inter', 10, 'bold'))
+            self.tasks_tab_btn.configure(bg=bg_hover, fg=text_secondary, font=('Inter', 10))
+            self.tasks_panel.pack_forget()
+            self.search_row.pack_forget()
+            self.quick_panel.pack(fill=tk.BOTH, expand=True)
+        else:
+            self.show_quick_tasks = False
+            self.tasks_tab_btn.configure(bg=accent_blue, fg='white', font=('Inter', 10, 'bold'))
+            self.quick_tab_btn.configure(bg=bg_hover, fg=text_secondary, font=('Inter', 10))
+            self.quick_panel.pack_forget()
+            self.search_row.pack(fill=tk.X, pady=(0, 8))
+            self.tasks_panel.pack(fill=tk.BOTH, expand=True)
+            self.search_entry.focus_set()
+
+    def create_quick_task_button(self, parent, task_config, customer):
+        """Create a clickable quick task button"""
+        bg_card = self.colors.get('bg_card', '#161b22')
+        bg_hover = self.colors.get('bg_hover', '#21262d')
+        text_primary = self.colors.get('text_primary', '#e6edf3')
+
+        icon = task_config.get('icon', '📌')
+        text = task_config.get('text', 'Task')
+
+        btn = tk.Button(parent, text=f"{icon} {text}", font=('Inter', 10),
+                       bg=bg_card, fg=text_primary, relief='flat', cursor='hand2',
+                       activebackground=bg_hover, activeforeground='white',
+                       padx=10, pady=6, bd=0, anchor='w',
+                       command=lambda: self.start_quick_task(text, customer))
+        btn.pack(fill=tk.X, pady=2)
+
+    def select_customer(self, customer):
+        """Select a customer and show available templates"""
+        self.selected_customer = customer
+
+        # Update button styles
+        for cust, btn in self.customer_buttons.items():
+            color = CUSTOMER_COLORS.get(cust, '#666')
+            if cust == customer:
+                btn.configure(relief='solid', bd=2)
+            else:
+                btn.configure(relief='flat', bd=0)
+
+        # Clear and populate templates
+        for widget in self.cust_templates_frame.winfo_children():
+            widget.destroy()
+
+        self.cust_hint.pack_forget()
+
+        for template in self.quick_tasks_config.get('customer_templates', []):
+            self.create_quick_task_button(self.cust_templates_frame, template, customer)
+
+    def start_quick_task(self, task_text, customer=None):
+        """Start a quick task"""
+        if customer:
+            full_text = f"{customer} {task_text}"
+            tag = f"#{customer.lower()}"
+        else:
+            full_text = task_text
+            customer = 'Internal'
+            tag = '#internal'
+
+        task = {
+            'text': full_text,
+            'customer': customer,
+            'tag': tag,
+            'asana_url': '',
+            'status': 'quick_task'
+        }
+        self.select_task(task)
 
     def populate_tasks(self):
         """Populate task list"""
