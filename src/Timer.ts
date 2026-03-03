@@ -232,11 +232,11 @@ export default class Timer implements Readable<TimerStore> {
         } else {
             state.mode = state.mode == 'WORK' ? 'BREAK' : 'WORK'
         }
-        
+
         // Save the new mode to localStorage - this only affects the current session
         // On startup, we'll always reset to WORK mode regardless of this value
         this.saveCurrentMode(state.mode);
-        
+
         state.duration = state.mode == 'WORK' ? state.workLen : state.breakLen
         state.count = state.duration * 60 * 1000
         state.inSession = false
@@ -247,6 +247,15 @@ export default class Timer implements Readable<TimerStore> {
         })
         state.startTime = null
         state.elapsed = 0
+
+        // Update external state file when session ends
+        try {
+            const stateFile = new StateFile();
+            stateFile.update({ active: false });
+        } catch (e) {
+            console.error('Failed to update state file on session end:', e);
+        }
+
         return state
     }
 

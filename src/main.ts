@@ -231,17 +231,28 @@ export default class PomodoroTimerPlugin extends Plugin {
             }
         })
 
-        // Idle reminder interval - check every 5 minutes
-        this.registerInterval(
-            window.setInterval(() => {
-                this.checkIdleReminder()
-            }, 5 * 60 * 1000) // 5 minutes
-        )
+        // Log that idle reminder system is initializing
+        console.log('🍅 Idle reminder system initializing...')
 
-        // Also check immediately after a short delay (let plugin fully load)
-        window.setTimeout(() => {
+        // Idle reminder interval - check every 5 minutes
+        const intervalId = window.setInterval(() => {
+            console.log('5-minute interval idle reminder check')
             this.checkIdleReminder()
-        }, 3000) // 3 second delay after load
+        }, 5 * 60 * 1000) // 5 minutes
+        this.registerInterval(intervalId)
+        console.log('🍅 5-minute interval registered, ID:', intervalId)
+
+        // First check after 10 seconds (quick test)
+        window.setTimeout(async () => {
+            console.log('🍅 Initial idle reminder check triggered (10s)')
+            try {
+                await this.checkIdleReminder()
+                console.log('🍅 checkIdleReminder completed')
+            } catch (e) {
+                console.error('🍅 checkIdleReminder ERROR:', e)
+            }
+        }, 10 * 1000) // 10 seconds for quick test
+        console.log('🍅 Initial 10-second timeout set')
     }
 
     /**
@@ -276,48 +287,70 @@ export default class PomodoroTimerPlugin extends Plugin {
      * Shows reminder if: enabled, weekday, work hours, no timer running, not in meeting
      */
     private async checkIdleReminder() {
-        const settings = this.getSettings()
+        console.log('🍅 checkIdleReminder() ENTER')
+        try {
+            const settings = this.getSettings()
+            console.log('🍅 Got settings')
+        console.log('Reminder settings:', {
+            enabled: settings.reminderEnabled,
+            startHour: settings.reminderStartHour,
+            endHour: settings.reminderEndHour
+        })
 
         // Check if reminder is enabled
         if (!settings.reminderEnabled) {
+            console.log('Reminder disabled, skipping')
             return
         }
 
         const now = new Date()
         const day = now.getDay()
         const hour = now.getHours()
+        console.log('Current time:', { day, hour, dayName: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][day] })
 
         // Check if weekday (Mon=1, Fri=5)
         if (day === 0 || day === 6) {
+            console.log('Weekend, skipping')
             return
         }
 
         // Check if within work hours
-        if (hour < settings.reminderStartHour || hour >= settings.reminderEndHour) {
+        if (hour < (settings.reminderStartHour ?? 9) || hour >= (settings.reminderEndHour ?? 18)) {
+            console.log('Outside work hours, skipping')
             return
         }
 
         // Check if timer is already running
         let timerRunning = false
+        let timerState: any = null
         const unsub = this.timer?.subscribe((state) => {
-            timerRunning = state.inSession
+            timerRunning = state.inSession || state.running
+            timerState = { inSession: state.inSession, running: state.running, mode: state.mode }
         })
         if (unsub) unsub()
 
+        console.log('Timer state:', timerState)
+
         if (timerRunning) {
+            console.log('Timer running, skipping')
             return
         }
 
         // Check if in a meeting - skip reminder if so
         const inMeeting = await this.isInMeeting()
+        console.log('In meeting:', inMeeting)
         if (inMeeting) {
+            console.log('In meeting, skipping')
             return
         }
 
         // Show native Electron popup on active monitor
-        // Falls back to Obsidian modal if Electron APIs unavailable
+        console.log('All checks passed, showing reminder!')
         const reminderWindow = new IdleReminderWindow(this)
         reminderWindow.show()
+        } catch (e) {
+            console.error('🍅 checkIdleReminder ERROR:', e)
+        }
     }
 
     public getSettings(): Settings {

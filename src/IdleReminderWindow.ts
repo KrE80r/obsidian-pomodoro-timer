@@ -1,258 +1,102 @@
 // src/IdleReminderWindow.ts
-// Creates a native Electron popup window for idle reminders
-// This appears on the active monitor, always on top
+// Launches a Python/Tk popup for idle reminders
+// Shows on active monitor with search, color-coded badges, and new task creation
 
 import type PomodoroTimerPlugin from 'main'
 import { AsanaTaskLoader, type AsanaTask } from './AsanaTaskLoader'
+import { exec } from 'child_process'
+import { Notice } from 'obsidian'
+import * as fs from 'fs'
+import * as path from 'path'
+
+const POPUP_SCRIPT = path.join(process.env.HOME || '', '.local/share/time-tracker/idle-reminder-popup.py')
+const RESULT_FILE = path.join(process.env.HOME || '', '.local/share/time-tracker/popup-result.json')
 
 export class IdleReminderWindow {
     private plugin: PomodoroTimerPlugin
-    private win: any = null
 
     constructor(plugin: PomodoroTimerPlugin) {
         this.plugin = plugin
     }
 
     async show(): Promise<void> {
+        console.log('IdleReminderWindow.show() called - launching Python popup')
+
+        // Refresh tasks from Dataview query and export to tasks.json
         try {
-            // Access Electron APIs
-            const electron = require('electron')
-            const remote = electron.remote || (require('@electron/remote') as any)
-            const { BrowserWindow, screen } = remote
+            console.log('Refreshing tasks from Dataview query...')
+            await this.plugin.tasks?.reloadTasks()
 
-            // Get cursor position to determine active monitor
-            const cursorPoint = screen.getCursorScreenPoint()
-            const activeDisplay = screen.getDisplayNearestPoint(cursorPoint)
-            const { x, y, width, height } = activeDisplay.workArea
+            // Get tasks from the store and export to tasks.json for the popup
+            let taskList: any[] = []
+            const unsub = this.plugin.tasks?.subscribe((state) => {
+                taskList = state.list || []
+            })
+            if (unsub) unsub()
 
-            // Window dimensions
-            const winWidth = 450
-            const winHeight = 380
-
-            // Center on active monitor
-            const winX = Math.round(x + (width - winWidth) / 2)
-            const winY = Math.round(y + (height - winHeight) / 2)
-
-            // Get Obsidian theme colors
-            const colors = this.getObsidianColors()
-
-            // Create the window
-            this.win = new BrowserWindow({
-                width: winWidth,
-                height: winHeight,
-                x: winX,
-                y: winY,
-                frame: false,
-                alwaysOnTop: true,
-                resizable: false,
-                skipTaskbar: true,
-                transparent: false,
-                backgroundColor: colors.bgPrimary,
-                webPreferences: {
-                    nodeIntegration: true,
-                    contextIsolation: false,
+            if (taskList.length > 0) {
+                console.log(`Exporting ${taskList.length} tasks to tasks.json for popup`)
+                this.exportTasksForPopup(taskList)
+            } else {
+                console.log('No tasks from Dataview, checking Asana bridge...')
+                // Fallback: trigger Asana bridge sync if no Dataview tasks
+                const asanaBridge = (this.plugin.app as any).plugins?.plugins?.['obsidian-asana-bridge']
+                if (asanaBridge?.syncService?.fetchAsanaTasks) {
+                    await asanaBridge.syncService.fetchAsanaTasks()
                 }
-            })
-
-            // Load tasks for the dropdown
-            const loader = new AsanaTaskLoader()
-            const tasks = loader.load()
-
-            // Build HTML content with Obsidian colors
-            const html = this.buildHTML(tasks, colors)
-
-            // Load the HTML
-            this.win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-
-            // Handle IPC from the window
-            const { ipcMain } = remote
-
-            // Clean up old listeners
-            ipcMain.removeAllListeners('idle-reminder-select-task')
-            ipcMain.removeAllListeners('idle-reminder-dismiss')
-
-            ipcMain.once('idle-reminder-select-task', (_event: any, taskIndex: number) => {
-                if (tasks[taskIndex]) {
-                    this.startTask(tasks[taskIndex])
-                }
-                this.close()
-            })
-
-            ipcMain.once('idle-reminder-dismiss', () => {
-                this.close()
-            })
-
-            // Focus the window
-            this.win.focus()
-
-        } catch (error) {
-            console.error('Failed to create idle reminder window:', error)
-            // Fallback to regular modal if Electron APIs not available
-            const { IdleReminderModal } = require('./IdleReminderModal')
-            new IdleReminderModal(this.plugin).open()
+            }
+        } catch (e) {
+            console.log('Could not refresh tasks:', e)
         }
+
+        // Remove old result file
+        try {
+            if (fs.existsSync(RESULT_FILE)) {
+                fs.unlinkSync(RESULT_FILE)
+            }
+        } catch (e) {
+            console.log('Could not remove old result file:', e)
+        }
+
+        // Launch Python popup (use system Python which has tkinter)
+        const cmd = `/usr/bin/python3 "${POPUP_SCRIPT}"`
+        console.log('Running:', cmd)
+
+        exec(cmd, { timeout: 300000 }, (error, stdout, stderr) => {
+            if (error) {
+                console.log('Popup closed or failed:', error.message)
+            }
+
+            // Read result file
+            this.readResultAndStart()
+        })
     }
 
-    /**
-     * Extract colors from Obsidian's current theme
-     */
-    private getObsidianColors(): Record<string, string> {
-        const body = document.body
-        const style = getComputedStyle(body)
-
-        return {
-            bgPrimary: style.getPropertyValue('--background-primary').trim() || '#1e1e1e',
-            bgSecondary: style.getPropertyValue('--background-secondary').trim() || '#262626',
-            bgModifier: style.getPropertyValue('--background-modifier-border').trim() || '#404040',
-            textNormal: style.getPropertyValue('--text-normal').trim() || '#dcddde',
-            textMuted: style.getPropertyValue('--text-muted').trim() || '#999',
-            textFaint: style.getPropertyValue('--text-faint').trim() || '#666',
-            textError: style.getPropertyValue('--text-error').trim() || '#ff6b6b',
-            interactive: style.getPropertyValue('--interactive-accent').trim() || '#7c3aed',
-            interactiveHover: style.getPropertyValue('--interactive-accent-hover').trim() || '#8b5cf6',
-        }
-    }
-
-    private buildHTML(tasks: AsanaTask[], colors: Record<string, string>): string {
-        const taskOptions = tasks.map((task, idx) => {
-            const color = AsanaTaskLoader.getCustomerColor(task.customer)
-            return `<option value="${idx}" data-color="${color}">${task.customer} - ${task.text}</option>`
-        }).join('')
-
-        return `
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: ${colors.bgPrimary};
-            color: ${colors.textNormal};
-            padding: 30px;
-            text-align: center;
-            user-select: none;
-            -webkit-app-region: drag;
-        }
-        .emoji { font-size: 64px; margin-bottom: 15px; }
-        h1 {
-            font-size: 24px;
-            color: ${colors.textError};
-            margin-bottom: 8px;
-            font-weight: 600;
-        }
-        .subtitle {
-            font-size: 14px;
-            color: ${colors.textMuted};
-            margin-bottom: 25px;
-        }
-        select {
-            width: 100%;
-            padding: 12px 15px;
-            font-size: 14px;
-            border: 1px solid ${colors.bgModifier};
-            border-radius: 6px;
-            background: ${colors.bgSecondary};
-            color: ${colors.textNormal};
-            margin-bottom: 20px;
-            cursor: pointer;
-            -webkit-app-region: no-drag;
-        }
-        select:focus { outline: none; border-color: ${colors.textMuted}; }
-        .buttons {
-            display: flex;
-            gap: 12px;
-            justify-content: center;
-            -webkit-app-region: no-drag;
-        }
-        button {
-            padding: 12px 24px;
-            font-size: 14px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: transform 0.1s, opacity 0.1s;
-        }
-        button:hover { opacity: 0.9; }
-        button:active { transform: scale(0.98); }
-        .start-btn {
-            background: #e74c3c;
-            color: white;
-            flex: 1;
-        }
-        .start-btn:hover {
-            background: #c0392b;
-        }
-        .dismiss-btn {
-            background: ${colors.bgSecondary};
-            color: ${colors.textMuted};
-            border: 1px solid ${colors.bgModifier};
-        }
-        .hint {
-            margin-top: 20px;
-            font-size: 11px;
-            color: ${colors.textFaint};
-        }
-    </style>
-</head>
-<body>
-    <div class="emoji">🍅</div>
-    <h1>No Timer Running!</h1>
-    <p class="subtitle">What are you working on?</p>
-
-    <select id="taskSelect">
-        <option value="">-- Select a task --</option>
-        ${taskOptions}
-    </select>
-
-    <div class="buttons">
-        <button class="start-btn" id="startBtn" disabled>▶ Start Timer</button>
-        <button class="dismiss-btn" id="dismissBtn">Later</button>
-    </div>
-
-    <p class="hint">Reminder returns in 5 minutes</p>
-
-    <script>
-        const { ipcRenderer } = require('electron')
-
-        const select = document.getElementById('taskSelect')
-        const startBtn = document.getElementById('startBtn')
-        const dismissBtn = document.getElementById('dismissBtn')
-
-        select.addEventListener('change', () => {
-            startBtn.disabled = select.value === ''
-        })
-
-        startBtn.addEventListener('click', () => {
-            if (select.value !== '') {
-                ipcRenderer.send('idle-reminder-select-task', parseInt(select.value))
+    private readResultAndStart(): void {
+        try {
+            if (!fs.existsSync(RESULT_FILE)) {
+                console.log('No result file - user dismissed')
+                return
             }
-        })
 
-        dismissBtn.addEventListener('click', () => {
-            ipcRenderer.send('idle-reminder-dismiss')
-        })
+            const data = fs.readFileSync(RESULT_FILE, 'utf8')
+            const result = JSON.parse(data)
+            console.log('Popup result:', result)
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                ipcRenderer.send('idle-reminder-dismiss')
-            } else if (e.key === 'Enter' && select.value !== '') {
-                ipcRenderer.send('idle-reminder-select-task', parseInt(select.value))
+            if (result.selected && result.task) {
+                this.startTask(result.task as AsanaTask)
             }
-        })
 
-        // Focus select on load
-        select.focus()
-    </script>
-</body>
-</html>`
+            // Clean up
+            fs.unlinkSync(RESULT_FILE)
+        } catch (e) {
+            console.error('Error reading result:', e)
+        }
     }
 
     private async startTask(task: AsanaTask): Promise<void> {
-        const { AsanaTaskModal } = require('./AsanaTaskModal')
         const fullTaskName = AsanaTaskLoader.formatLabel(task)
+        console.log('Starting task:', fullTaskName)
 
         // Build TaskItem
         const taskItem = {
@@ -306,12 +150,66 @@ export class IdleReminderWindow {
             started_at: new Date().toISOString(),
             duration_minutes: this.plugin.getSettings().workLen,
         })
+
+        new Notice(`Timer started: ${task.customer} - ${task.text}`)
     }
 
     close(): void {
-        if (this.win && !this.win.isDestroyed()) {
-            this.win.close()
+        // Python popup handles its own cleanup
+    }
+
+    /**
+     * Export tasks to JSON file for the Python popup to read
+     * Converts TaskItem format to the popup's expected format
+     */
+    private exportTasksForPopup(tasks: any[]): void {
+        const TASKS_FILE = path.join(process.env.HOME || '', '.local/share/time-tracker/tasks.json')
+
+        // Convert TaskItem to popup format
+        const exportedTasks = tasks.map(task => {
+            // Try to extract customer from tags
+            let customer = 'Internal'
+            let tag = '#internal'
+
+            if (task.tags && task.tags.length > 0) {
+                // Look for customer tags like #cba, #qantas, #kiwi, #bnz
+                const customerTags: Record<string, string> = {
+                    '#cba': 'CBA',
+                    '#qantas': 'Qantas',
+                    '#kiwi': 'Kiwi',
+                    '#bnz': 'BNZ',
+                    '#westpac': 'Westpac',
+                    '#internal': 'Internal'
+                }
+
+                for (const t of task.tags) {
+                    const lower = t.toLowerCase()
+                    if (customerTags[lower]) {
+                        customer = customerTags[lower]
+                        tag = lower
+                        break
+                    }
+                }
+            }
+
+            return {
+                text: task.name || task.text || task.description || 'Untitled task',
+                asana_url: '',  // Dataview tasks don't have Asana URLs
+                customer: customer,
+                tag: tag,
+                status: task.status || ''
+            }
+        })
+
+        try {
+            const dir = path.dirname(TASKS_FILE)
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true })
+            }
+            fs.writeFileSync(TASKS_FILE, JSON.stringify(exportedTasks, null, 2))
+            console.log(`Exported ${exportedTasks.length} tasks to ${TASKS_FILE}`)
+        } catch (e) {
+            console.error('Failed to export tasks:', e)
         }
-        this.win = null
     }
 }
