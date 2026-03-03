@@ -242,17 +242,17 @@ export default class PomodoroTimerPlugin extends Plugin {
         this.registerInterval(intervalId)
         console.log('🍅 5-minute interval registered, ID:', intervalId)
 
-        // First check after 10 seconds (quick test)
+        // First check after 15 minutes (give user time to start working)
         window.setTimeout(async () => {
-            console.log('🍅 Initial idle reminder check triggered (10s)')
+            console.log('🍅 Initial idle reminder check triggered (15m)')
             try {
                 await this.checkIdleReminder()
                 console.log('🍅 checkIdleReminder completed')
             } catch (e) {
                 console.error('🍅 checkIdleReminder ERROR:', e)
             }
-        }, 10 * 1000) // 10 seconds for quick test
-        console.log('🍅 Initial 10-second timeout set')
+        }, 15 * 60 * 1000) // 15 minutes
+        console.log('🍅 Initial 15-minute timeout set')
     }
 
     /**
