@@ -38,9 +38,23 @@ export class AsanaTaskLoader {
     /**
      * Format task label for display: "CBA Move to cloud #cba"
      * This format flows through to daily note entries
+     * Avoids duplicating customer prefix if already present in text
      */
     static formatLabel(task: AsanaTask): string {
-        return `${task.customer} ${task.text} ${task.tag}`
+        const text = task.text || ''
+        const customer = task.customer || ''
+        const tag = task.tag || ''
+
+        // Check if text already starts with customer name (avoid "BNZ BNZ ...")
+        const startsWithCustomer = customer && text.toLowerCase().startsWith(customer.toLowerCase())
+
+        if (startsWithCustomer) {
+            // Text already has customer prefix, just append tag
+            return tag ? `${text} ${tag}` : text
+        } else {
+            // Add customer prefix
+            return `${customer} ${text} ${tag}`.trim()
+        }
     }
 
     /**
