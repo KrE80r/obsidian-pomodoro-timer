@@ -105,6 +105,15 @@ const context = await esbuild.context({
 
 if (prod) {
     await context.rebuild()
+
+    // Copy Python popup script to output location
+    const scriptSrc = path.resolve('scripts/idle-reminder-popup.py')
+    const scriptDest = path.resolve('idle-reminder-popup.py')
+    if (fs.existsSync(scriptSrc)) {
+        fs.copyFileSync(scriptSrc, scriptDest)
+        console.log('Copied idle-reminder-popup.py to output')
+    }
+
     process.exit(0)
 } else {
     await context.watch()

@@ -1,0 +1,570 @@
+#!/usr/bin/python3
+"""
+Idle Reminder Popup - A searchable task selector with color-coded customers
+Shows on active monitor, allows searching and creating new tasks (including in Asana)
+"""
+
+import json
+import os
+import sys
+import tkinter as tk
+from tkinter import ttk
+from pathlib import Path
+import urllib.request
+import urllib.error
+
+# Customer color mapping
+CUSTOMER_COLORS = {
+    'CBA': '#e74c3c',      # Red
+    'Qantas': '#9b59b6',   # Purple
+    'Kiwi': '#2ecc71',     # Green
+    'BNZ': '#3498db',      # Blue
+    'Internal': '#95a5a6', # Gray
+    'WP': '#e67e22',       # Orange
+    'Westpac': '#d35400',  # Dark Orange
+}
+
+TASKS_FILE = Path.home() / '.local/share/time-tracker/tasks.json'
+RESULT_FILE = Path.home() / '.local/share/time-tracker/popup-result.json'
+ASANA_CONFIG = Path.home() / 'obsidian/.obsidian/plugins/obsidian-asana-bridge/data.json'
+
+class AsanaAPI:
+    """Simple Asana API client - compatible with obsidian-asana-bridge"""
+
+    def __init__(self):
+        self.config = self.load_config()
+        self.token = self.config.get('asanaAccessToken', '') if self.config else ''
+        self.projects = {p['prefix']: p for p in self.config.get('selectedProjects', [])} if self.config else {}
+        self._token_owner = None
+
+    def load_config(self):
+        """Load Asana config from Obsidian plugin"""
+        if not ASANA_CONFIG.exists():
+            return None
+        try:
+            with open(ASANA_CONFIG) as f:
+                return json.load(f)
+        except:
+            return None
+
+    def get_token_owner(self) -> dict | None:
+        """Get the user who owns the token (for assignee)"""
+        if self._token_owner:
+            return self._token_owner
+        if not self.token:
+            return None
+        try:
+            req = urllib.request.Request(
+                'https://app.asana.com/api/1.0/users/me',
+                headers={'Authorization': f'Bearer {self.token}'},
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                result = json.loads(response.read().decode('utf-8'))
+                self._token_owner = result.get('data', {})
+                return self._token_owner
+        except Exception as e:
+            print(f"Failed to get token owner: {e}")
+            return None
+
+    def create_task(self, name: str, customer: str) -> dict | None:
+        """Create a task in Asana and return task info with URL"""
+        if not self.token:
+            print("No Asana token configured")
+            return None
+
+        project = self.projects.get(customer)
+        if not project:
+            print(f"No Asana project configured for {customer}")
+            return None
+
+        project_id = project['id']
+        section_id = project.get('defaultSectionId')
+
+        # Get token owner for assignee (matches asana-bridge behavior)
+        token_owner = self.get_token_owner()
+
+        # Create task via API
+        url = 'https://app.asana.com/api/1.0/tasks'
+        data = {
+            'data': {
+                'name': name,
+                'projects': [project_id],
+            }
+        }
+
+        # Assign to token owner (like asana-bridge does)
+        if token_owner and token_owner.get('gid'):
+            data['data']['assignee'] = token_owner['gid']
+
+        # Add to section if configured
+        if section_id:
+            data['data']['memberships'] = [{'project': project_id, 'section': section_id}]
+
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(data).encode('utf-8'),
+                headers={
+                    'Authorization': f'Bearer {self.token}',
+                    'Content-Type': 'application/json',
+                },
+                method='POST'
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                result = json.loads(response.read().decode('utf-8'))
+                task_data = result.get('data', {})
+                gid = task_data.get('gid', '')
+                permalink = task_data.get('permalink_url', '')
+
+                # If no permalink, construct it
+                if not permalink and gid:
+                    permalink = f"https://app.asana.com/0/{project_id}/{gid}"
+
+                return {
+                    'gid': gid,
+                    'name': name,
+                    'permalink': permalink,
+                }
+        except urllib.error.HTTPError as e:
+            print(f"Asana API error: {e.code} - {e.read().decode('utf-8')}")
+            return None
+        except Exception as e:
+            print(f"Error creating Asana task: {e}")
+            return None
+
+    def get_customers(self) -> list[str]:
+        """Get list of configured customers"""
+        return list(self.projects.keys())
+
+
+class IdleReminderPopup:
+    def __init__(self):
+        self.tasks = self.load_tasks()
+        self.filtered_tasks = self.tasks.copy()
+        self.selected_task = None
+        self.asana = AsanaAPI()
+
+        # Create window
+        self.root = tk.Tk()
+        self.root.title("🍅 Focus Time")
+        self.root.configure(bg='#0d1117')
+
+        # Window size - taller to fit buttons
+        width, height = 500, 550
+
+        # Get screen dimensions where mouse is located
+        mouse_x = self.root.winfo_pointerx()
+        mouse_y = self.root.winfo_pointery()
+
+        # Get the screen containing the mouse
+        # Use screenwidth/screenheight for the virtual screen, then find monitor
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+
+        # For multi-monitor: try to get monitor info via xrandr
+        try:
+            import subprocess
+            result = subprocess.run(['xrandr', '--query'], capture_output=True, text=True, timeout=2)
+            monitors = []
+            for line in result.stdout.split('\n'):
+                if ' connected' in line and 'x' in line:
+                    # Parse: "DP-1 connected primary 2560x1440+0+0"
+                    parts = line.split()
+                    for part in parts:
+                        if 'x' in part and '+' in part:
+                            # Format: WxH+X+Y
+                            geom = part.split('+')
+                            dims = geom[0].split('x')
+                            if len(dims) == 2 and len(geom) >= 3:
+                                monitors.append({
+                                    'w': int(dims[0]),
+                                    'h': int(dims[1]),
+                                    'x': int(geom[1]),
+                                    'y': int(geom[2])
+                                })
+                            break
+
+            # Find which monitor contains the mouse
+            for mon in monitors:
+                if (mon['x'] <= mouse_x < mon['x'] + mon['w'] and
+                    mon['y'] <= mouse_y < mon['y'] + mon['h']):
+                    # Center on this monitor
+                    x = mon['x'] + (mon['w'] - width) // 2
+                    y = mon['y'] + (mon['h'] - height) // 2
+                    break
+            else:
+                # Fallback: center on first monitor or screen
+                if monitors:
+                    x = monitors[0]['x'] + (monitors[0]['w'] - width) // 2
+                    y = monitors[0]['y'] + (monitors[0]['h'] - height) // 2
+                else:
+                    x = (screen_width - width) // 2
+                    y = (screen_height - height) // 2
+        except Exception as e:
+            print(f"Monitor detection failed: {e}")
+            # Fallback: center on screen
+            x = (screen_width - width) // 2
+            y = (screen_height - height) // 2
+
+        self.root.geometry(f'{width}x{height}+{x}+{y}')
+        self.root.resizable(False, False)
+
+        # Keep on top
+        self.root.attributes('-topmost', True)
+
+        # Style
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
+        self.style.configure('TFrame', background='#1e1e1e')
+        self.style.configure('TLabel', background='#1e1e1e', foreground='#dcddde')
+        self.style.configure('TButton', padding=10)
+        self.style.configure('Search.TEntry', padding=10)
+
+        self.build_ui()
+
+        # Bind keys
+        self.root.bind('<Escape>', lambda e: self.dismiss())
+        self.root.bind('<Return>', lambda e: self.select_current())
+
+        # Focus search
+        self.search_var.set('')
+        self.search_entry.focus_set()
+
+    def load_tasks(self):
+        """Load tasks from JSON file"""
+        if not TASKS_FILE.exists():
+            return []
+        try:
+            with open(TASKS_FILE) as f:
+                return json.load(f)
+        except:
+            return []
+
+    def build_ui(self):
+        """Build the UI - Modern dark theme"""
+        # Colors
+        bg_dark = '#0d1117'
+        bg_card = '#161b22'
+        bg_hover = '#21262d'
+        text_primary = '#e6edf3'
+        text_secondary = '#8b949e'
+        text_muted = '#484f58'
+        accent_blue = '#58a6ff'
+        accent_red = '#f85149'
+        border_color = '#30363d'
+
+        self.root.configure(bg=bg_dark)
+
+        main_frame = tk.Frame(self.root, bg=bg_dark, padx=24, pady=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Header
+        header_frame = tk.Frame(main_frame, bg=bg_dark)
+        header_frame.pack(fill=tk.X, pady=(0, 20))
+
+        emoji_label = tk.Label(header_frame, text="🍅", font=('Noto Color Emoji', 40),
+                               bg=bg_dark, fg='white')
+        emoji_label.pack()
+
+        title_label = tk.Label(header_frame, text="Time to Focus!",
+                               font=('Inter', 20, 'bold'), bg=bg_dark, fg=text_primary)
+        title_label.pack(pady=(8, 4))
+
+        subtitle_label = tk.Label(header_frame, text="Select a task or create a new one",
+                                  font=('Inter', 11), bg=bg_dark, fg=text_secondary)
+        subtitle_label.pack()
+
+        # Search row with New Task button
+        search_row = tk.Frame(main_frame, bg=bg_dark)
+        search_row.pack(fill=tk.X, pady=(0, 12))
+
+        # Search container with border effect
+        search_container = tk.Frame(search_row, bg=border_color, padx=1, pady=1)
+        search_container.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add('write', self.on_search)
+
+        self.search_entry = tk.Entry(search_container, textvariable=self.search_var,
+                                     font=('Inter', 12), bg=bg_card, fg=text_primary,
+                                     insertbackground=text_primary, relief='flat',
+                                     highlightthickness=0)
+        self.search_entry.pack(fill=tk.X, ipady=10, ipadx=12)
+        self.search_entry.insert(0, '')
+
+        # New Task button
+        new_btn = tk.Button(search_row, text="+ New Task", font=('Inter', 11, 'bold'),
+                           bg=accent_blue, fg='white', relief='flat', cursor='hand2',
+                           activebackground='#4c9aed', activeforeground='white',
+                           padx=16, pady=10, bd=0,
+                           command=self.create_new_task)
+        new_btn.pack(side=tk.RIGHT, padx=(12, 0))
+
+        # Bottom row - pack FIRST so it's never pushed off
+        bottom_frame = tk.Frame(main_frame, bg=bg_dark)
+        bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(16, 0))
+
+        # Hint on left
+        hint_label = tk.Label(bottom_frame, text="↵ Select  •  Esc Dismiss",
+                             font=('Inter', 10), bg=bg_dark, fg=text_muted)
+        hint_label.pack(side=tk.LEFT)
+
+        # Later button on right - larger and prominent
+        dismiss_btn = tk.Button(bottom_frame, text="Later", font=('Inter', 12, 'bold'),
+                               bg='#30363d', fg=text_primary, relief='flat', cursor='hand2',
+                               activebackground='#484f58', activeforeground='white',
+                               padx=28, pady=12, bd=0,
+                               command=self.dismiss)
+        dismiss_btn.pack(side=tk.RIGHT)
+
+        # Task list container with border - pack AFTER bottom frame
+        list_container = tk.Frame(main_frame, bg=border_color, padx=1, pady=1)
+        list_container.pack(fill=tk.BOTH, expand=True)
+
+        list_inner = tk.Frame(list_container, bg=bg_card, height=260)
+        list_inner.pack(fill=tk.BOTH, expand=True)
+        list_inner.pack_propagate(False)
+
+        # Canvas for task items
+        self.canvas = tk.Canvas(list_inner, bg=bg_card, highlightthickness=0, bd=0)
+        scrollbar = ttk.Scrollbar(list_inner, orient=tk.VERTICAL, command=self.canvas.yview)
+        self.task_frame = tk.Frame(self.canvas, bg=bg_card)
+
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.task_frame, anchor='nw')
+
+        self.task_frame.bind('<Configure>', self.on_frame_configure)
+        self.canvas.bind('<Configure>', self.on_canvas_configure)
+
+        # Mouse wheel scrolling
+        self.canvas.bind_all('<Button-4>', lambda e: self.canvas.yview_scroll(-1, 'units'))
+        self.canvas.bind_all('<Button-5>', lambda e: self.canvas.yview_scroll(1, 'units'))
+
+        # Store colors for task items
+        self.colors = {
+            'bg_card': bg_card, 'bg_hover': bg_hover, 'text_primary': text_primary,
+            'text_secondary': text_secondary, 'border_color': border_color
+        }
+
+        # Populate tasks
+        self.populate_tasks()
+
+    def on_frame_configure(self, event):
+        self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+
+    def on_canvas_configure(self, event):
+        self.canvas.itemconfig(self.canvas_window, width=event.width)
+
+    def populate_tasks(self):
+        """Populate task list"""
+        # Clear existing
+        for widget in self.task_frame.winfo_children():
+            widget.destroy()
+
+        for i, task in enumerate(self.filtered_tasks):
+            self.create_task_item(task, i)
+
+    def create_task_item(self, task, index):
+        """Create a single task item with colored badge"""
+        customer = task.get('customer', 'Internal')
+        text = task.get('text', 'Unknown task')
+        color = CUSTOMER_COLORS.get(customer, '#95a5a6')
+
+        bg_card = self.colors.get('bg_card', '#161b22')
+        bg_hover = self.colors.get('bg_hover', '#21262d')
+        text_primary = self.colors.get('text_primary', '#e6edf3')
+
+        # Item frame
+        item_frame = tk.Frame(self.task_frame, bg=bg_card, cursor='hand2')
+        item_frame.pack(fill=tk.X, pady=3, padx=4)
+
+        # Hover effect
+        def on_enter(e):
+            item_frame.configure(bg=bg_hover)
+            text_container.configure(bg=bg_hover)
+            label.configure(bg=bg_hover)
+
+        def on_leave(e):
+            item_frame.configure(bg=bg_card)
+            text_container.configure(bg=bg_card)
+            label.configure(bg=bg_card)
+
+        def on_click(e, t=task):
+            self.select_task(t)
+
+        item_frame.bind('<Enter>', on_enter)
+        item_frame.bind('<Leave>', on_leave)
+        item_frame.bind('<Button-1>', on_click)
+
+        # Customer badge with colored background
+        badge = tk.Label(item_frame, text=f" {customer} ", font=('Inter', 9, 'bold'),
+                        bg=color, fg='white', padx=6, pady=2)
+        badge.pack(side=tk.LEFT, padx=(8, 12), pady=10)
+        badge.bind('<Button-1>', on_click)
+
+        # Text container for vertical centering
+        text_container = tk.Frame(item_frame, bg=bg_card)
+        text_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        text_container.bind('<Button-1>', on_click)
+
+        # Task text
+        label = tk.Label(text_container, text=text, font=('Inter', 11),
+                        bg=bg_card, fg=text_primary, anchor='w', wraplength=300)
+        label.pack(side=tk.LEFT, fill=tk.X, expand=True, pady=10)
+        label.bind('<Button-1>', on_click)
+
+    def on_search(self, *args):
+        """Filter tasks based on search"""
+        query = self.search_var.get().lower()
+        if not query:
+            self.filtered_tasks = self.tasks.copy()
+        else:
+            self.filtered_tasks = [
+                t for t in self.tasks
+                if query in t.get('text', '').lower() or
+                   query in t.get('customer', '').lower() or
+                   query in t.get('tag', '').lower()
+            ]
+        self.populate_tasks()
+
+    def select_task(self, task):
+        """Select a task and close"""
+        self.selected_task = task
+        self.save_result()
+        self.root.destroy()
+
+    def select_current(self):
+        """Select first visible task on Enter"""
+        if self.filtered_tasks:
+            self.select_task(self.filtered_tasks[0])
+
+    def create_new_task(self):
+        """Open dialog to create new task (optionally synced to Asana)"""
+        search_text = self.search_var.get().strip()
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("New Task")
+        dialog.configure(bg='#1e1e1e')
+        dialog.geometry('420x280')
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Center on parent
+        dialog.geometry(f'+{self.root.winfo_x() + 40}+{self.root.winfo_y() + 80}')
+
+        frame = tk.Frame(dialog, bg='#1e1e1e', padx=20, pady=20)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        # Task name
+        tk.Label(frame, text="Task name:", bg='#1e1e1e', fg='#dcddde',
+                font=('Segoe UI', 11)).pack(anchor='w')
+
+        task_var = tk.StringVar(value=search_text)
+        task_entry = tk.Entry(frame, textvariable=task_var, font=('Segoe UI', 12),
+                             bg='#2d2d2d', fg='#dcddde', insertbackground='#dcddde',
+                             relief='flat', highlightthickness=1, highlightbackground='#404040')
+        task_entry.pack(fill=tk.X, ipady=6, pady=(5, 15))
+        task_entry.focus_set()
+
+        # Customer dropdown
+        tk.Label(frame, text="Customer:", bg='#1e1e1e', fg='#dcddde',
+                font=('Segoe UI', 11)).pack(anchor='w')
+
+        # Use Asana-configured customers if available, otherwise defaults
+        asana_customers = self.asana.get_customers()
+        customers = asana_customers if asana_customers else list(CUSTOMER_COLORS.keys())
+        if 'Internal' not in customers:
+            customers.append('Internal')
+
+        customer_var = tk.StringVar(value=customers[0] if customers else 'Internal')
+        customer_combo = ttk.Combobox(frame, textvariable=customer_var, values=customers,
+                                      state='readonly', font=('Segoe UI', 11))
+        customer_combo.pack(fill=tk.X, pady=(5, 15))
+
+        # Sync to Asana checkbox
+        sync_var = tk.BooleanVar(value=True)
+        sync_check = tk.Checkbutton(frame, text="Create in Asana", variable=sync_var,
+                                   bg='#1e1e1e', fg='#dcddde', selectcolor='#2d2d2d',
+                                   activebackground='#1e1e1e', activeforeground='#dcddde',
+                                   font=('Segoe UI', 11))
+        sync_check.pack(anchor='w', pady=(0, 15))
+
+        # Status label
+        status_var = tk.StringVar(value='')
+        status_label = tk.Label(frame, textvariable=status_var, bg='#1e1e1e', fg='#f39c12',
+                               font=('Segoe UI', 10))
+        status_label.pack(anchor='w')
+
+        # Buttons
+        btn_frame = tk.Frame(frame, bg='#1e1e1e')
+        btn_frame.pack(fill=tk.X, pady=(10, 0))
+
+        def save_new():
+            name = task_var.get().strip()
+            customer = customer_var.get()
+            if not name:
+                return
+
+            asana_url = ''
+
+            if sync_var.get() and customer != 'Internal':
+                status_var.set('Creating in Asana...')
+                dialog.update()
+
+                result = self.asana.create_task(name, customer)
+                if result:
+                    asana_url = result.get('permalink', '')
+                    status_var.set('✓ Created in Asana')
+                else:
+                    status_var.set('⚠ Asana sync failed (continuing locally)')
+                dialog.update()
+
+            new_task = {
+                'text': name,
+                'customer': customer,
+                'tag': f'#{customer.lower()}',
+                'asana_url': asana_url,
+                'status': 'in_progress'
+            }
+            self.select_task(new_task)
+            dialog.destroy()
+
+        tk.Button(btn_frame, text="Start Timer", font=('Segoe UI', 11, 'bold'),
+                 bg='#e74c3c', fg='white', relief='flat', cursor='hand2',
+                 activebackground='#c0392b', command=save_new).pack(side=tk.RIGHT)
+
+        tk.Button(btn_frame, text="Cancel", font=('Segoe UI', 11),
+                 bg='#2d2d2d', fg='#999', relief='flat', cursor='hand2',
+                 command=dialog.destroy).pack(side=tk.RIGHT, padx=(0, 10))
+
+        dialog.bind('<Return>', lambda e: save_new())
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
+
+    def dismiss(self):
+        """Close without selecting"""
+        self.selected_task = None
+        self.save_result()
+        self.root.destroy()
+
+    def save_result(self):
+        """Save result to file for Obsidian to read"""
+        result = {
+            'selected': self.selected_task is not None,
+            'task': self.selected_task
+        }
+        RESULT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(RESULT_FILE, 'w') as f:
+            json.dump(result, f)
+
+    def run(self):
+        """Run the popup"""
+        self.root.mainloop()
+
+
+if __name__ == '__main__':
+    app = IdleReminderPopup()
+    app.run()

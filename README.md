@@ -186,6 +186,62 @@ dv.table(
 | --pomodoro-timer-text-color    | var(--text-normal) |
 | --pomodoro-timer-dot-color     | var(--color-ted)   |
 
+## Idle Reminder System
+
+The plugin includes an intelligent idle reminder system that prompts you to start a timer when you're not actively tracking work.
+
+### Features
+
+- **Periodic Reminders**: Checks every 5 minutes during configured work hours
+- **Smart Detection**: Only shows reminders when:
+  - Reminder is enabled in settings
+  - It's a weekday (Mon-Fri)
+  - Current time is within work hours
+  - No timer is currently running
+  - You're not in a video meeting (Zoom/Teams/Meet)
+- **Native Popup**: Cross-platform Python/Tkinter popup that appears on your active monitor
+- **Task Search**: Filter tasks by typing in the search box
+- **Color-Coded Badges**: Customer tags displayed with distinct colors (CBA=red, Qantas=purple, etc.)
+- **New Task Creation**: Create ad-hoc tasks directly from the popup, optionally synced to Asana
+- **Dataview Integration**: Tasks are refreshed from your Dataview query each time the reminder appears
+
+### Settings
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Enable Idle Reminder | Toggle the reminder system | On |
+| Work Hours Start | Hour when reminders begin | 9:00 |
+| Work Hours End | Hour when reminders stop | 18:00 |
+
+### Task Query
+
+Configure a Dataview query in settings to load your tasks:
+
+```
+TASK FROM "0-Daily notes"
+WHERE !completed
+```
+
+### Architecture
+
+The idle reminder uses two components:
+
+1. **Obsidian Plugin** (`src/IdleReminderWindow.ts`): Manages the reminder schedule, refreshes tasks, and handles timer activation
+2. **Python Popup** (`scripts/idle-reminder-popup.py`): Native GUI with search, task selection, and Asana integration
+
+### Asana Integration
+
+If you have the [Obsidian Asana Bridge](https://github.com/your-repo/obsidian-asana-bridge) plugin configured, new tasks created from the popup can be automatically synced to Asana with proper project assignment.
+
+### Data Files
+
+The system uses `~/.local/share/time-tracker/` for:
+- `tasks.json` - Exported task list for the popup
+- `popup-result.json` - Selected task result
+- `state.json` - Timer state for external integrations
+
+---
+
 ## FAQ
 
 1. How to Switch the Session

@@ -9,14 +9,37 @@ import { Notice } from 'obsidian'
 import * as fs from 'fs'
 import * as path from 'path'
 
-const POPUP_SCRIPT = path.join(process.env.HOME || '', '.local/share/time-tracker/idle-reminder-popup.py')
-const RESULT_FILE = path.join(process.env.HOME || '', '.local/share/time-tracker/popup-result.json')
+// Data files location (shared state)
+const DATA_DIR = path.join(process.env.HOME || '', '.local/share/time-tracker')
+const RESULT_FILE = path.join(DATA_DIR, 'popup-result.json')
 
 export class IdleReminderWindow {
     private plugin: PomodoroTimerPlugin
 
     constructor(plugin: PomodoroTimerPlugin) {
         this.plugin = plugin
+    }
+
+    /**
+     * Get the path to the popup script.
+     * Looks in plugin folder first, falls back to ~/.local/share/time-tracker
+     */
+    private getPopupScriptPath(): string {
+        // Try plugin folder first (bundled with plugin)
+        const vaultPath = (this.plugin.app.vault.adapter as any).basePath
+        const pluginPath = path.join(vaultPath, '.obsidian/plugins/pomodoro-timer/idle-reminder-popup.py')
+        if (fs.existsSync(pluginPath)) {
+            return pluginPath
+        }
+
+        // Fallback to legacy location
+        const legacyPath = path.join(DATA_DIR, 'idle-reminder-popup.py')
+        if (fs.existsSync(legacyPath)) {
+            return legacyPath
+        }
+
+        // Return plugin path (will error if missing, but with clear message)
+        return pluginPath
     }
 
     async show(): Promise<void> {
@@ -59,7 +82,8 @@ export class IdleReminderWindow {
         }
 
         // Launch Python popup (use system Python which has tkinter)
-        const cmd = `/usr/bin/python3 "${POPUP_SCRIPT}"`
+        const popupScript = this.getPopupScriptPath()
+        const cmd = `/usr/bin/python3 "${popupScript}"`
         console.log('Running:', cmd)
 
         exec(cmd, { timeout: 300000 }, (error, stdout, stderr) => {
