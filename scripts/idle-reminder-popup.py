@@ -381,20 +381,27 @@ class IdleReminderPopup:
         self.quick_frame.bind('<Configure>', lambda e: self.quick_canvas.configure(scrollregion=self.quick_canvas.bbox('all')))
         self.quick_canvas.bind('<Configure>', lambda e: self.quick_canvas.itemconfig(self.quick_canvas_window, width=e.width))
 
-        # Mouse wheel scrolling for quick panel - bind to all widgets
-        def quick_scroll_up(e):
-            self.quick_canvas.yview_scroll(-1, 'units')
-        def quick_scroll_down(e):
-            self.quick_canvas.yview_scroll(1, 'units')
+        # Mouse wheel scrolling - use bind_all at root level
+        def on_mousewheel(e):
+            # Scroll whichever panel is visible
+            if self.show_quick_tasks:
+                if e.num == 4:
+                    self.quick_canvas.yview_scroll(-1, 'units')
+                elif e.num == 5:
+                    self.quick_canvas.yview_scroll(1, 'units')
+            else:
+                if e.num == 4:
+                    self.canvas.yview_scroll(-1, 'units')
+                elif e.num == 5:
+                    self.canvas.yview_scroll(1, 'units')
 
-        # Bind to canvas and frame
-        for widget in [self.quick_canvas, self.quick_frame, quick_inner, quick_container]:
-            widget.bind('<Button-4>', quick_scroll_up)
-            widget.bind('<Button-5>', quick_scroll_down)
+        # Bind globally to root window
+        self.root.bind_all('<Button-4>', on_mousewheel)
+        self.root.bind_all('<Button-5>', on_mousewheel)
 
-        # Store scroll functions to bind to dynamically created widgets
-        self.quick_scroll_up = quick_scroll_up
-        self.quick_scroll_down = quick_scroll_down
+        # Store for reference (no longer needed for individual widgets)
+        self.quick_scroll_up = lambda e: None
+        self.quick_scroll_down = lambda e: None
 
         # Generic tasks section
         generic_label = tk.Label(self.quick_frame, text="Generic Tasks", font=('Inter', 10, 'bold'),
