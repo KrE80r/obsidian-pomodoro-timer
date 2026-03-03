@@ -359,27 +359,50 @@ class IdleReminderPopup:
             'bg_dark': bg_dark, 'accent_blue': accent_blue
         }
 
-        # === QUICK TASKS PANEL ===
+        # === QUICK TASKS PANEL (scrollable) ===
         self.quick_panel = tk.Frame(self.content_frame, bg=bg_dark)
 
+        # Scrollable container for quick tasks
+        quick_container = tk.Frame(self.quick_panel, bg=border_color, padx=1, pady=1)
+        quick_container.pack(fill=tk.BOTH, expand=True)
+
+        quick_inner = tk.Frame(quick_container, bg=bg_card)
+        quick_inner.pack(fill=tk.BOTH, expand=True)
+
+        self.quick_canvas = tk.Canvas(quick_inner, bg=bg_card, highlightthickness=0, bd=0)
+        quick_scrollbar = ttk.Scrollbar(quick_inner, orient=tk.VERTICAL, command=self.quick_canvas.yview)
+        self.quick_frame = tk.Frame(self.quick_canvas, bg=bg_card)
+
+        self.quick_canvas.configure(yscrollcommand=quick_scrollbar.set)
+        quick_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.quick_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        self.quick_canvas_window = self.quick_canvas.create_window((0, 0), window=self.quick_frame, anchor='nw')
+        self.quick_frame.bind('<Configure>', lambda e: self.quick_canvas.configure(scrollregion=self.quick_canvas.bbox('all')))
+        self.quick_canvas.bind('<Configure>', lambda e: self.quick_canvas.itemconfig(self.quick_canvas_window, width=e.width))
+
+        # Mouse wheel scrolling for quick panel
+        self.quick_canvas.bind('<Button-4>', lambda e: self.quick_canvas.yview_scroll(-1, 'units'))
+        self.quick_canvas.bind('<Button-5>', lambda e: self.quick_canvas.yview_scroll(1, 'units'))
+
         # Generic tasks section
-        generic_label = tk.Label(self.quick_panel, text="Generic Tasks", font=('Inter', 10, 'bold'),
-                                bg=bg_dark, fg=text_secondary)
+        generic_label = tk.Label(self.quick_frame, text="Generic Tasks", font=('Inter', 10, 'bold'),
+                                bg=bg_card, fg=text_secondary)
         generic_label.pack(anchor='w', pady=(0, 8))
 
-        generic_frame = tk.Frame(self.quick_panel, bg=bg_dark)
+        generic_frame = tk.Frame(self.quick_frame, bg=bg_card)
         generic_frame.pack(fill=tk.X, pady=(0, 16))
 
         for task in self.quick_tasks_config.get('generic_tasks', []):
             self.create_quick_task_button(generic_frame, task, None)
 
         # Customer templates section
-        cust_label = tk.Label(self.quick_panel, text="Customer Quick Tasks", font=('Inter', 10, 'bold'),
-                             bg=bg_dark, fg=text_secondary)
-        cust_label.pack(anchor='w', pady=(0, 8))
+        cust_label = tk.Label(self.quick_frame, text="Customer Quick Tasks", font=('Inter', 10, 'bold'),
+                             bg=bg_card, fg=text_secondary)
+        cust_label.pack(anchor='w', pady=(8, 8))
 
         # Customer selector row
-        cust_row = tk.Frame(self.quick_panel, bg=bg_dark)
+        cust_row = tk.Frame(self.quick_frame, bg=bg_card)
         cust_row.pack(fill=tk.X, pady=(0, 8))
 
         customers = self.asana.get_customers() or list(CUSTOMER_COLORS.keys())
@@ -394,11 +417,11 @@ class IdleReminderPopup:
             self.customer_buttons[cust] = btn
 
         # Customer template buttons (shown after customer selected)
-        self.cust_templates_frame = tk.Frame(self.quick_panel, bg=bg_dark)
+        self.cust_templates_frame = tk.Frame(self.quick_frame, bg=bg_card)
         self.cust_templates_frame.pack(fill=tk.X, pady=(0, 8))
 
-        self.cust_hint = tk.Label(self.quick_panel, text="↑ Select a customer first",
-                                 font=('Inter', 9), bg=bg_dark, fg=text_muted)
+        self.cust_hint = tk.Label(self.quick_frame, text="↑ Select a customer first",
+                                 font=('Inter', 9), bg=bg_card, fg=text_muted)
         self.cust_hint.pack(anchor='w')
 
         # === TASK LIST PANEL ===
@@ -460,17 +483,17 @@ class IdleReminderPopup:
 
     def create_quick_task_button(self, parent, task_config, customer):
         """Create a clickable quick task button"""
-        bg_card = self.colors.get('bg_card', '#161b22')
         bg_hover = self.colors.get('bg_hover', '#21262d')
         text_primary = self.colors.get('text_primary', '#e6edf3')
+        border_color = self.colors.get('border_color', '#30363d')
 
         icon = task_config.get('icon', '📌')
         text = task_config.get('text', 'Task')
 
         btn = tk.Button(parent, text=f"{icon} {text}", font=('Inter', 10),
-                       bg=bg_card, fg=text_primary, relief='flat', cursor='hand2',
+                       bg=border_color, fg=text_primary, relief='flat', cursor='hand2',
                        activebackground=bg_hover, activeforeground='white',
-                       padx=10, pady=6, bd=0, anchor='w',
+                       padx=12, pady=8, bd=0, anchor='w',
                        command=lambda: self.start_quick_task(text, customer))
         btn.pack(fill=tk.X, pady=2)
 
