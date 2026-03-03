@@ -153,8 +153,8 @@ class IdleReminderPopup:
         self.root.title("🍅 Focus Time")
         self.root.configure(bg='#0d1117')
 
-        # Window size - taller to fit tabs and quick tasks
-        width, height = 520, 620
+        # Window size - tall enough to show all quick tasks without scrolling
+        width, height = 520, 780
 
         # Get screen dimensions where mouse is located
         mouse_x = self.root.winfo_pointerx()
@@ -381,16 +381,28 @@ class IdleReminderPopup:
         self.quick_frame.bind('<Configure>', lambda e: self.quick_canvas.configure(scrollregion=self.quick_canvas.bbox('all')))
         self.quick_canvas.bind('<Configure>', lambda e: self.quick_canvas.itemconfig(self.quick_canvas_window, width=e.width))
 
-        # Mouse wheel scrolling - bind to canvas
+        # Mouse wheel scrolling - focus canvas on enter, bind scroll globally
+        def on_enter_quick(e):
+            self.quick_canvas.focus_set()
+
         def scroll_quick(event):
             self.quick_canvas.yview_scroll(-1 if event.num == 4 else 1, 'units')
-            return "break"  # Prevent event propagation
+            return "break"
 
+        # Focus canvas when entering the quick panel area
+        self.quick_panel.bind('<Enter>', on_enter_quick)
+        quick_container.bind('<Enter>', on_enter_quick)
+        quick_inner.bind('<Enter>', on_enter_quick)
+        self.quick_canvas.bind('<Enter>', on_enter_quick)
+        self.quick_frame.bind('<Enter>', on_enter_quick)
+
+        # Bind scroll to canvas (works when focused)
         self.quick_canvas.bind('<Button-4>', scroll_quick)
         self.quick_canvas.bind('<Button-5>', scroll_quick)
 
         # Store scroll function to bind to all children later
         self._scroll_quick = scroll_quick
+        self._on_enter_quick = on_enter_quick
 
         # Generic tasks section
         generic_label = tk.Label(self.quick_frame, text="Generic Tasks", font=('Inter', 10, 'bold'),
@@ -473,6 +485,9 @@ class IdleReminderPopup:
         """Bind scroll events to widget and all its children recursively"""
         widget.bind('<Button-4>', scroll_func)
         widget.bind('<Button-5>', scroll_func)
+        # Also bind enter to focus canvas
+        if hasattr(self, '_on_enter_quick'):
+            widget.bind('<Enter>', self._on_enter_quick, add='+')
         for child in widget.winfo_children():
             self._bind_scroll_recursive(child, scroll_func)
 
