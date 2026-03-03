@@ -1,0 +1,25 @@
+{
+  "description": "Quick-start task templates for the idle reminder popup",
+  "note": "Edit this file to customize. Customers are loaded from Obsidian config.",
+
+  "generic_tasks": [
+    {"text": "Email triage & inbox processing", "category": "Communication", "icon": "📧"},
+    {"text": "Slack catchup", "category": "Communication", "icon": "💬"},
+    {"text": "Meeting prep", "category": "Admin", "icon": "📋"},
+    {"text": "Documentation & notes", "category": "Admin", "icon": "📝"},
+    {"text": "Learning & training", "category": "Development", "icon": "📚"},
+    {"text": "Housekeeping & admin", "category": "Admin", "icon": "🧹"},
+    {"text": "Personal project work", "category": "Development", "icon": "🛠️"},
+    {"text": "Code review", "category": "Development", "icon": "👀"},
+    {"text": "Debugging & troubleshooting", "category": "Development", "icon": "🔧"},
+    {"text": "Social media browsing", "category": "Break", "icon": "📱"}
+  ],
+
+  "customer_templates": [
+    {"text": "Investigation", "icon": "🔍"},
+    {"text": "Email response", "icon": "📧"},
+    {"text": "Meeting followup", "icon": "📋"},
+    {"text": "Research", "icon": "📚"},
+    {"text": "Documentation", "icon": "📝"}
+  ]
+}
