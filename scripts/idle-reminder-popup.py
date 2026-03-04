@@ -145,7 +145,7 @@ class IdleReminderPopup:
         self.selected_task = None
         self.asana = AsanaAPI()
         self.quick_tasks_config = self.load_quick_tasks()
-        self.show_quick_tasks = True  # Toggle between quick tasks and full task list
+        self.show_quick_tasks = False  # Toggle between quick tasks and full task list
         self.selected_customer = None  # For customer+template combinations
 
         # Create window
@@ -292,14 +292,14 @@ class IdleReminderPopup:
         tab_row = tk.Frame(main_frame, bg=bg_dark)
         tab_row.pack(fill=tk.X, pady=(0, 12))
 
-        self.quick_tab_btn = tk.Button(tab_row, text="⚡ Quick Start", font=('Inter', 10, 'bold'),
-                                       bg=accent_blue, fg='white', relief='flat', cursor='hand2',
+        self.quick_tab_btn = tk.Button(tab_row, text="⚡ Quick Start", font=('Inter', 10),
+                                       bg=bg_hover, fg=text_secondary, relief='flat', cursor='hand2',
                                        padx=12, pady=6, bd=0,
                                        command=lambda: self.switch_tab('quick'))
         self.quick_tab_btn.pack(side=tk.LEFT)
 
-        self.tasks_tab_btn = tk.Button(tab_row, text="📋 My Tasks", font=('Inter', 10),
-                                       bg=bg_hover, fg=text_secondary, relief='flat', cursor='hand2',
+        self.tasks_tab_btn = tk.Button(tab_row, text="📋 My Tasks", font=('Inter', 10, 'bold'),
+                                       bg=accent_blue, fg='white', relief='flat', cursor='hand2',
                                        padx=12, pady=6, bd=0,
                                        command=lambda: self.switch_tab('tasks'))
         self.tasks_tab_btn.pack(side=tk.LEFT, padx=(8, 0))
@@ -474,9 +474,11 @@ class IdleReminderPopup:
             self._active_canvas = self.canvas
         self.tasks_panel.bind('<Enter>', set_tasks_active)
 
-        # Initialize: show quick tasks panel
-        self.quick_panel.pack(fill=tk.BOTH, expand=True)
+        # Initialize: show tasks panel (Obsidian tasks) by default
+        self.search_row.pack(fill=tk.X, pady=(0, 8))
+        self.tasks_panel.pack(fill=tk.BOTH, expand=True)
         self.populate_tasks()
+        self.search_entry.focus_set()
 
         # Bind scroll to all widgets after UI is built
         self.root.after(100, lambda: self._bind_scroll_quick(self.quick_panel))
