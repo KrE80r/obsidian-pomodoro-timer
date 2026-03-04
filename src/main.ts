@@ -256,16 +256,31 @@ export default class PomodoroTimerPlugin extends Plugin {
     }
 
     /**
-     * Check if user is in a video meeting by looking at window titles
-     * Uses wmctrl on Linux to check for Zoom/Teams/Meet windows
+     * Check if user is in a video meeting
+     * Uses both process detection and window titles for reliability
      */
     private async isInMeeting(): Promise<boolean> {
+        // Check 1: Look for meeting app processes (most reliable)
+        const processCheck = await new Promise<boolean>((resolve) => {
+            // Check for Zoom, Teams, or Google Meet processes
+            exec('pgrep -f "zoom|teams|meet" 2>/dev/null', { timeout: 1000 }, (error, stdout) => {
+                if (error || !stdout.trim()) {
+                    resolve(false)
+                } else {
+                    console.log('Meeting process detected:', stdout.trim().split('\n').length, 'processes')
+                    resolve(true)
+                }
+            })
+        })
+
+        if (processCheck) return true
+
+        // Check 2: Fallback to window titles
         return new Promise((resolve) => {
-            const meetingPatterns = ['zoom', 'teams.microsoft.com', 'meet.google.com']
+            const meetingPatterns = ['zoom', 'teams', 'meet.google', 'microsoft teams']
 
             exec('wmctrl -l', { timeout: 1000 }, (error, stdout) => {
                 if (error) {
-                    // wmctrl not available or failed - assume not in meeting
                     resolve(false)
                     return
                 }
@@ -273,6 +288,7 @@ export default class PomodoroTimerPlugin extends Plugin {
                 const windowsLower = stdout.toLowerCase()
                 for (const pattern of meetingPatterns) {
                     if (windowsLower.includes(pattern)) {
+                        console.log('Meeting window detected:', pattern)
                         resolve(true)
                         return
                     }
