@@ -153,8 +153,8 @@ class IdleReminderPopup:
         self.root.title("🍅 Focus Time")
         self.root.configure(bg='#0d1117')
 
-        # Window size - tall enough to show all quick tasks without scrolling
-        width, height = 520, 780
+        # Window size
+        width, height = 520, 520
 
         # Get screen dimensions where mouse is located
         mouse_x = self.root.winfo_pointerx()
@@ -381,28 +381,32 @@ class IdleReminderPopup:
         self.quick_frame.bind('<Configure>', lambda e: self.quick_canvas.configure(scrollregion=self.quick_canvas.bbox('all')))
         self.quick_canvas.bind('<Configure>', lambda e: self.quick_canvas.itemconfig(self.quick_canvas_window, width=e.width))
 
-        # Mouse wheel scrolling - focus canvas on enter, bind scroll globally
-        def on_enter_quick(e):
-            self.quick_canvas.focus_set()
-
+        # Scroll handler for quick canvas - works on KDE/X11/Wayland
         def scroll_quick(event):
-            self.quick_canvas.yview_scroll(-1 if event.num == 4 else 1, 'units')
-            return "break"
+            # Button-4 = scroll wheel up = show content above = negative scroll
+            # Button-5 = scroll wheel down = show content below = positive scroll
+            if event.num == 4:
+                self.quick_canvas.yview_scroll(-3, 'units')
+            elif event.num == 5:
+                self.quick_canvas.yview_scroll(3, 'units')
+            elif hasattr(event, 'delta'):
+                # MouseWheel event (Windows/Mac)
+                self.quick_canvas.yview_scroll(-1 if event.delta > 0 else 1, 'units')
+            return 'break'
 
-        # Focus canvas when entering the quick panel area
-        self.quick_panel.bind('<Enter>', on_enter_quick)
-        quick_container.bind('<Enter>', on_enter_quick)
-        quick_inner.bind('<Enter>', on_enter_quick)
-        self.quick_canvas.bind('<Enter>', on_enter_quick)
-        self.quick_frame.bind('<Enter>', on_enter_quick)
+        # Recursive bind to widget and all children
+        def bind_scroll_to_widget(widget):
+            widget.bind('<Button-4>', scroll_quick)
+            widget.bind('<Button-5>', scroll_quick)
+            widget.bind('<MouseWheel>', scroll_quick)  # Windows/Mac/some Linux
+            for child in widget.winfo_children():
+                bind_scroll_to_widget(child)
 
-        # Bind scroll to canvas (works when focused)
-        self.quick_canvas.bind('<Button-4>', scroll_quick)
-        self.quick_canvas.bind('<Button-5>', scroll_quick)
+        # Bind to canvas, frame, and panel
+        bind_scroll_to_widget(self.quick_panel)
 
-        # Store scroll function to bind to all children later
-        self._scroll_quick = scroll_quick
-        self._on_enter_quick = on_enter_quick
+        # Store for new widgets created later
+        self._bind_scroll_quick = lambda w: bind_scroll_to_widget(w)
 
         # Generic tasks section
         generic_label = tk.Label(self.quick_frame, text="Generic Tasks", font=('Inter', 10, 'bold'),
@@ -443,9 +447,6 @@ class IdleReminderPopup:
                                  font=('Inter', 9), bg=bg_card, fg=text_muted)
         self.cust_hint.pack(anchor='w')
 
-        # Bind scroll to ALL widgets in quick panel recursively
-        self._bind_scroll_recursive(self.quick_frame, self._scroll_quick)
-
         # === TASK LIST PANEL ===
         self.tasks_panel = tk.Frame(self.content_frame, bg=bg_dark)
 
@@ -468,28 +469,23 @@ class IdleReminderPopup:
         self.task_frame.bind('<Configure>', self.on_frame_configure)
         self.canvas.bind('<Configure>', self.on_canvas_configure)
 
-        self.canvas.bind_all('<Button-4>', lambda e: self.canvas.yview_scroll(-1, 'units'))
-        self.canvas.bind_all('<Button-5>', lambda e: self.canvas.yview_scroll(1, 'units'))
+        # Set active canvas when entering tasks panel
+        def set_tasks_active(e):
+            self._active_canvas = self.canvas
+        self.tasks_panel.bind('<Enter>', set_tasks_active)
 
         # Initialize: show quick tasks panel
         self.quick_panel.pack(fill=tk.BOTH, expand=True)
         self.populate_tasks()
+
+        # Bind scroll to all widgets after UI is built
+        self.root.after(100, lambda: self._bind_scroll_quick(self.quick_panel))
 
     def on_frame_configure(self, event):
         self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
     def on_canvas_configure(self, event):
         self.canvas.itemconfig(self.canvas_window, width=event.width)
-
-    def _bind_scroll_recursive(self, widget, scroll_func):
-        """Bind scroll events to widget and all its children recursively"""
-        widget.bind('<Button-4>', scroll_func)
-        widget.bind('<Button-5>', scroll_func)
-        # Also bind enter to focus canvas
-        if hasattr(self, '_on_enter_quick'):
-            widget.bind('<Enter>', self._on_enter_quick, add='+')
-        for child in widget.winfo_children():
-            self._bind_scroll_recursive(child, scroll_func)
 
     def switch_tab(self, tab):
         """Switch between quick tasks and full task list"""
@@ -499,6 +495,7 @@ class IdleReminderPopup:
 
         if tab == 'quick':
             self.show_quick_tasks = True
+            self._active_canvas = self.quick_canvas
             self.quick_tab_btn.configure(bg=accent_blue, fg='white', font=('Inter', 10, 'bold'))
             self.tasks_tab_btn.configure(bg=bg_hover, fg=text_secondary, font=('Inter', 10))
             self.tasks_panel.pack_forget()
@@ -506,6 +503,7 @@ class IdleReminderPopup:
             self.quick_panel.pack(fill=tk.BOTH, expand=True)
         else:
             self.show_quick_tasks = False
+            self._active_canvas = self.canvas
             self.tasks_tab_btn.configure(bg=accent_blue, fg='white', font=('Inter', 10, 'bold'))
             self.quick_tab_btn.configure(bg=bg_hover, fg=text_secondary, font=('Inter', 10))
             self.quick_panel.pack_forget()
