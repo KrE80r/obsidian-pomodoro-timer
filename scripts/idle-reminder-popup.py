@@ -384,16 +384,13 @@ class IdleReminderPopup:
         self.quick_frame.bind('<Configure>', lambda e: self.quick_canvas.configure(scrollregion=self.quick_canvas.bbox('all')))
         self.quick_canvas.bind('<Configure>', lambda e: self.quick_canvas.itemconfig(self.quick_canvas_window, width=e.width))
 
-        # Scroll handler for quick canvas - works on KDE/X11/Wayland
+        # Scroll handler for quick canvas
         def scroll_quick(event):
-            # Button-4 = scroll wheel up = show content above = negative scroll
-            # Button-5 = scroll wheel down = show content below = positive scroll
             if event.num == 4:
-                self.quick_canvas.yview_scroll(-3, 'units')
+                self.quick_canvas.yview_scroll(-1, 'units')
             elif event.num == 5:
-                self.quick_canvas.yview_scroll(3, 'units')
+                self.quick_canvas.yview_scroll(1, 'units')
             elif hasattr(event, 'delta'):
-                # MouseWheel event (Windows/Mac)
                 self.quick_canvas.yview_scroll(-1 if event.delta > 0 else 1, 'units')
             return 'break'
 
@@ -401,14 +398,14 @@ class IdleReminderPopup:
         def bind_scroll_to_widget(widget):
             widget.bind('<Button-4>', scroll_quick)
             widget.bind('<Button-5>', scroll_quick)
-            widget.bind('<MouseWheel>', scroll_quick)  # Windows/Mac/some Linux
+            widget.bind('<MouseWheel>', scroll_quick)
             for child in widget.winfo_children():
                 bind_scroll_to_widget(child)
 
         # Bind to canvas, frame, and panel
         bind_scroll_to_widget(self.quick_panel)
 
-        # Store for new widgets created later
+        # Store for rebinding after tab switch
         self._bind_scroll_quick = lambda w: bind_scroll_to_widget(w)
 
         # Customer templates section (at top for quick access)
@@ -475,9 +472,9 @@ class IdleReminderPopup:
         # Scroll handler for tasks canvas (same pattern as quick canvas)
         def scroll_tasks(event):
             if event.num == 4:
-                self.canvas.yview_scroll(-3, 'units')
+                self.canvas.yview_scroll(-1, 'units')
             elif event.num == 5:
-                self.canvas.yview_scroll(3, 'units')
+                self.canvas.yview_scroll(1, 'units')
             elif hasattr(event, 'delta'):
                 self.canvas.yview_scroll(-1 if event.delta > 0 else 1, 'units')
             return 'break'
@@ -580,6 +577,9 @@ class IdleReminderPopup:
 
         for template in self.quick_tasks_config.get('customer_templates', []):
             self.create_quick_task_button(self.cust_templates_frame, template, customer)
+
+        # Rebind scroll to new widgets
+        self.root.after(50, lambda: self._bind_scroll_quick(self.quick_panel))
 
     def start_quick_task(self, task_text, customer=None):
         """Start a quick task"""
