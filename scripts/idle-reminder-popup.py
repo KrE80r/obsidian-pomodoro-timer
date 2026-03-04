@@ -408,21 +408,10 @@ class IdleReminderPopup:
         # Store for new widgets created later
         self._bind_scroll_quick = lambda w: bind_scroll_to_widget(w)
 
-        # Generic tasks section
-        generic_label = tk.Label(self.quick_frame, text="Generic Tasks", font=('Inter', 10, 'bold'),
-                                bg=bg_card, fg=text_secondary)
-        generic_label.pack(anchor='w', pady=(0, 8))
-
-        generic_frame = tk.Frame(self.quick_frame, bg=bg_card)
-        generic_frame.pack(fill=tk.X, pady=(0, 16))
-
-        for task in self.quick_tasks_config.get('generic_tasks', []):
-            self.create_quick_task_button(generic_frame, task, None)
-
-        # Customer templates section
+        # Customer templates section (at top for quick access)
         cust_label = tk.Label(self.quick_frame, text="Customer Quick Tasks", font=('Inter', 10, 'bold'),
                              bg=bg_card, fg=text_secondary)
-        cust_label.pack(anchor='w', pady=(8, 8))
+        cust_label.pack(anchor='w', pady=(0, 8))
 
         # Customer selector row
         cust_row = tk.Frame(self.quick_frame, bg=bg_card)
@@ -447,6 +436,17 @@ class IdleReminderPopup:
                                  font=('Inter', 9), bg=bg_card, fg=text_muted)
         self.cust_hint.pack(anchor='w')
 
+        # Generic tasks section (below customer tasks)
+        generic_label = tk.Label(self.quick_frame, text="Generic Tasks", font=('Inter', 10, 'bold'),
+                                bg=bg_card, fg=text_secondary)
+        generic_label.pack(anchor='w', pady=(16, 8))
+
+        generic_frame = tk.Frame(self.quick_frame, bg=bg_card)
+        generic_frame.pack(fill=tk.X, pady=(0, 8))
+
+        for task in self.quick_tasks_config.get('generic_tasks', []):
+            self.create_quick_task_button(generic_frame, task, None)
+
         # === TASK LIST PANEL ===
         self.tasks_panel = tk.Frame(self.content_frame, bg=bg_dark)
 
@@ -469,10 +469,36 @@ class IdleReminderPopup:
         self.task_frame.bind('<Configure>', self.on_frame_configure)
         self.canvas.bind('<Configure>', self.on_canvas_configure)
 
-        # Set active canvas when entering tasks panel
-        def set_tasks_active(e):
-            self._active_canvas = self.canvas
-        self.tasks_panel.bind('<Enter>', set_tasks_active)
+        # Scroll handler for tasks canvas (same pattern as quick canvas)
+        def scroll_tasks(event):
+            if event.num == 4:
+                self.canvas.yview_scroll(-3, 'units')
+            elif event.num == 5:
+                self.canvas.yview_scroll(3, 'units')
+            elif hasattr(event, 'delta'):
+                self.canvas.yview_scroll(-1 if event.delta > 0 else 1, 'units')
+            return 'break'
+
+        def bind_tasks_scroll(widget):
+            widget.bind('<Button-4>', scroll_tasks)
+            widget.bind('<Button-5>', scroll_tasks)
+            widget.bind('<MouseWheel>', scroll_tasks)
+            for child in widget.winfo_children():
+                bind_tasks_scroll(child)
+
+        # Bind to entire tasks_panel container (like quick_panel)
+        # Also add Enter binding to give canvas focus
+        def on_enter_tasks(e):
+            self.canvas.focus_set()
+        self.tasks_panel.bind('<Enter>', on_enter_tasks)
+        self.canvas.bind('<Enter>', on_enter_tasks)
+
+        # Bind directly to canvas as well
+        self.canvas.bind('<Button-4>', scroll_tasks)
+        self.canvas.bind('<Button-5>', scroll_tasks)
+        self.canvas.bind('<MouseWheel>', scroll_tasks)
+
+        self._bind_tasks_scroll = lambda: bind_tasks_scroll(self.tasks_panel)
 
         # Initialize: show tasks panel (Obsidian tasks) by default
         self.search_row.pack(fill=tk.X, pady=(0, 8))
@@ -482,6 +508,7 @@ class IdleReminderPopup:
 
         # Bind scroll to all widgets after UI is built
         self.root.after(100, lambda: self._bind_scroll_quick(self.quick_panel))
+        self.root.after(100, self._bind_tasks_scroll)
 
     def on_frame_configure(self, event):
         self.canvas.configure(scrollregion=self.canvas.bbox('all'))
@@ -512,6 +539,7 @@ class IdleReminderPopup:
             self.search_row.pack(fill=tk.X, pady=(0, 8))
             self.tasks_panel.pack(fill=tk.BOTH, expand=True)
             self.search_entry.focus_set()
+            self.root.after(50, self._bind_tasks_scroll)
 
     def create_quick_task_button(self, parent, task_config, customer):
         """Create a clickable quick task button"""
@@ -577,6 +605,10 @@ class IdleReminderPopup:
 
         for i, task in enumerate(self.filtered_tasks):
             self.create_task_item(task, i)
+
+        # Rebind scroll to new widgets
+        if hasattr(self, '_bind_tasks_scroll'):
+            self.root.after(50, self._bind_tasks_scroll)
 
     def create_task_item(self, task, index):
         """Create a single task item with colored badge"""
