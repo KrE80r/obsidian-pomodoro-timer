@@ -348,6 +348,9 @@ class IdleReminderPopup:
                                command=self.dismiss)
         dismiss_btn.pack(side=tk.RIGHT)
 
+        # Pack search_row BEFORE content so it appears above
+        self.search_row.pack(fill=tk.X, pady=(0, 8))
+
         # Content container - holds both quick tasks and task list panels
         self.content_frame = tk.Frame(main_frame, bg=bg_dark)
         self.content_frame.pack(fill=tk.BOTH, expand=True)
@@ -501,7 +504,7 @@ class IdleReminderPopup:
         self._bind_tasks_scroll = lambda: bind_tasks_scroll(self.tasks_panel)
 
         # Initialize: show tasks panel (Obsidian tasks) by default
-        self.search_row.pack(fill=tk.X, pady=(0, 8))
+        # search_row already packed above content_frame
         self.tasks_panel.pack(fill=tk.BOTH, expand=True)
         self.populate_tasks()
         self.search_entry.focus_set()
@@ -536,7 +539,7 @@ class IdleReminderPopup:
             self.tasks_tab_btn.configure(bg=accent_blue, fg='white', font=('Inter', 10, 'bold'))
             self.quick_tab_btn.configure(bg=bg_hover, fg=text_secondary, font=('Inter', 10))
             self.quick_panel.pack_forget()
-            self.search_row.pack(fill=tk.X, pady=(0, 8))
+            self.search_row.pack(fill=tk.X, pady=(0, 8), before=self.content_frame)
             self.tasks_panel.pack(fill=tk.BOTH, expand=True)
             self.search_entry.focus_set()
             self.root.after(50, self._bind_tasks_scroll)
