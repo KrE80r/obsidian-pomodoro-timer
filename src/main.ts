@@ -257,11 +257,12 @@ export default class PomodoroTimerPlugin extends Plugin {
 
     /**
      * Check if user is in a video meeting
-     * Uses WINDOW detection only (process detection is unreliable)
+     * Uses wmctrl -lx to check window CLASS (app identity) - most reliable
      */
     private async isInMeeting(): Promise<boolean> {
         return new Promise((resolve) => {
-            exec('wmctrl -l', { timeout: 1000 }, (error, stdout) => {
+            // -lx includes window class (e.g., "zoom.zoom", "slack.Slack")
+            exec('wmctrl -lx', { timeout: 1000 }, (error, stdout) => {
                 if (error) {
                     resolve(false)
                     return
@@ -270,9 +271,10 @@ export default class PomodoroTimerPlugin extends Plugin {
                 const lines = stdout.toLowerCase().split('\n')
 
                 for (const line of lines) {
-                    // Zoom: window title contains "zoom meeting" or "zoom webinar"
-                    if (line.includes('zoom meeting') || line.includes('zoom webinar')) {
-                        console.log('Zoom meeting window detected')
+                    // Zoom: window class contains "zoom" (e.g., "zoom.zoom")
+                    // This detects ANY Zoom window - reliable meeting indicator
+                    if (line.includes('zoom.zoom')) {
+                        console.log('Zoom window detected (class)')
                         resolve(true)
                         return
                     }
