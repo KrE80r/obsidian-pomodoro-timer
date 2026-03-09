@@ -294,10 +294,11 @@ export default class PomodoroTimerPlugin extends Plugin {
                         return
                     }
 
-                    // Teams meeting - must have BOTH teams AND meeting/call indicator
-                    // Catches both PWA and browser (Chrome/Firefox) sessions
-                    if (line.includes('teams') && (line.includes('meeting') || line.includes('call'))) {
-                        console.log('Teams meeting/call detected:', line.substring(0, 80))
+                    // Teams meeting detection:
+                    // - PWA chat window has "(pwa)" in title - NOT a meeting
+                    // - Browser meeting window has "teams" but NO "(pwa)" - IS a meeting
+                    if (line.includes('teams') && !line.includes('(pwa)')) {
+                        console.log('Teams meeting detected (browser):', line.substring(0, 80))
                         resolve(true)
                         return
                     }
