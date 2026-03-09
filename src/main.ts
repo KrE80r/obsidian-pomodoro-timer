@@ -257,38 +257,47 @@ export default class PomodoroTimerPlugin extends Plugin {
 
     /**
      * Check if user is in a video meeting
-     * Uses both process detection and window titles for reliability
+     * Zoom: process check (Zoom closes after meeting)
+     * Teams/Meet: window title check (apps stay open, but meeting windows are distinct)
      */
     private async isInMeeting(): Promise<boolean> {
-        // Check 1: Look for meeting app processes (most reliable)
-        const processCheck = await new Promise<boolean>((resolve) => {
-            // Check for Zoom, Teams, or Google Meet processes
-            exec('pgrep -f "zoom|teams|meet" 2>/dev/null', { timeout: 1000 }, (error, stdout) => {
+        // Check 1: Zoom process (only Zoom - it closes when meeting ends)
+        const zoomRunning = await new Promise<boolean>((resolve) => {
+            exec('pgrep -f "/opt/zoom/zoom" 2>/dev/null', { timeout: 1000 }, (error, stdout) => {
                 if (error || !stdout.trim()) {
                     resolve(false)
                 } else {
-                    console.log('Meeting process detected:', stdout.trim().split('\n').length, 'processes')
+                    console.log('Zoom process detected - in meeting')
                     resolve(true)
                 }
             })
         })
 
-        if (processCheck) return true
+        if (zoomRunning) return true
 
-        // Check 2: Fallback to window titles
+        // Check 2: Window titles for Teams/Meet active calls
+        // Teams PWA/browser stays open, so only detect actual meeting/call windows
         return new Promise((resolve) => {
-            const meetingPatterns = ['zoom', 'teams', 'meet.google', 'microsoft teams']
-
             exec('wmctrl -l', { timeout: 1000 }, (error, stdout) => {
                 if (error) {
                     resolve(false)
                     return
                 }
 
-                const windowsLower = stdout.toLowerCase()
-                for (const pattern of meetingPatterns) {
-                    if (windowsLower.includes(pattern)) {
-                        console.log('Meeting window detected:', pattern)
+                const lines = stdout.toLowerCase().split('\n')
+
+                for (const line of lines) {
+                    // Google Meet in browser
+                    if (line.includes('meet.google.com')) {
+                        console.log('Google Meet detected')
+                        resolve(true)
+                        return
+                    }
+
+                    // Teams meeting - must have BOTH teams AND meeting/call indicator
+                    // Catches both PWA and browser (Chrome/Firefox) sessions
+                    if (line.includes('teams') && (line.includes('meeting') || line.includes('call'))) {
+                        console.log('Teams meeting/call detected:', line.substring(0, 80))
                         resolve(true)
                         return
                     }
