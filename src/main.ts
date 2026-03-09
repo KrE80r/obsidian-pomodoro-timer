@@ -257,26 +257,9 @@ export default class PomodoroTimerPlugin extends Plugin {
 
     /**
      * Check if user is in a video meeting
-     * Zoom: process check (Zoom closes after meeting)
-     * Teams/Meet: window title check (apps stay open, but meeting windows are distinct)
+     * Uses WINDOW detection only (process detection is unreliable)
      */
     private async isInMeeting(): Promise<boolean> {
-        // Check 1: Zoom process (only Zoom - it closes when meeting ends)
-        const zoomRunning = await new Promise<boolean>((resolve) => {
-            exec('pgrep -f "/opt/zoom/zoom" 2>/dev/null', { timeout: 1000 }, (error, stdout) => {
-                if (error || !stdout.trim()) {
-                    resolve(false)
-                } else {
-                    console.log('Zoom process detected - in meeting')
-                    resolve(true)
-                }
-            })
-        })
-
-        if (zoomRunning) return true
-
-        // Check 2: Window titles for Teams/Meet active calls
-        // Teams PWA/browser stays open, so only detect actual meeting/call windows
         return new Promise((resolve) => {
             exec('wmctrl -l', { timeout: 1000 }, (error, stdout) => {
                 if (error) {
@@ -287,6 +270,13 @@ export default class PomodoroTimerPlugin extends Plugin {
                 const lines = stdout.toLowerCase().split('\n')
 
                 for (const line of lines) {
+                    // Zoom: window title contains "zoom meeting" or "zoom webinar"
+                    if (line.includes('zoom meeting') || line.includes('zoom webinar')) {
+                        console.log('Zoom meeting window detected')
+                        resolve(true)
+                        return
+                    }
+
                     // Google Meet in browser
                     if (line.includes('meet.google.com')) {
                         console.log('Google Meet detected')
