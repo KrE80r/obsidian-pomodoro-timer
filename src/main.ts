@@ -270,15 +270,16 @@ export default class PomodoroTimerPlugin extends Plugin {
 
                 const lines = stdout.toLowerCase().split('\n')
 
-                for (const line of lines) {
-                    // Zoom: window class contains "zoom" (e.g., "zoom.zoom")
-                    // This detects ANY Zoom window - reliable meeting indicator
-                    if (line.includes('zoom.zoom')) {
-                        console.log('Zoom window detected (class)')
-                        resolve(true)
-                        return
-                    }
+                // Zoom: idle app has 1 window ("Zoom Workplace - Licensed account")
+                // Active meeting creates additional windows (meeting window, controls, etc.)
+                const zoomWindows = lines.filter(l => l.includes('zoom.zoom'))
+                if (zoomWindows.length > 1) {
+                    console.log('Zoom meeting detected:', zoomWindows.length, 'zoom windows')
+                    resolve(true)
+                    return
+                }
 
+                for (const line of lines) {
                     // Google Meet in browser
                     if (line.includes('meet.google.com')) {
                         console.log('Google Meet detected')
